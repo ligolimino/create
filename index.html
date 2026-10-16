@@ -118,7 +118,7 @@
         /* Keuze van de tool */
         .tools {
             display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
+            grid-template-columns: repeat(4, minmax(0, 1fr));
             gap: 10px;
         }
         .tool {
@@ -136,6 +136,9 @@
             font-size: 0.82rem;
         }
         .tool .ico { font-size: 1.6rem; display: block; line-height: 1.2; }
+        @media (max-width: 560px) {
+            .tools { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
         .tool[aria-pressed="true"] {
             border-color: var(--teal);
             background: var(--teal-soft);
@@ -419,9 +422,10 @@
             <div class="card">
                 <h2><span class="step">1</span> Welke oefening?</h2>
                 <div class="tools" role="group" aria-label="Soort oefening">
-                    <button class="tool" data-tool="dictee"><span class="ico"></span>Dictee<small>woord typen</small></button>
-                    <button class="tool" data-tool="klikklak"><span class="ico"></span>Klik-klak<small>boekje met flapjes</small></button>
-                    <button class="tool" data-tool="sleep"><span class="ico"></span>Sleep<small>letters naar vakjes</small></button>
+                    <button class="tool" data-tool="dictee"><span class="ico">⌨️</span>Dictee<small>woord typen</small></button>
+                    <button class="tool" data-tool="klikklak"><span class="ico">📖</span>Klik-klak<small>boekje met flapjes</small></button>
+                    <button class="tool" data-tool="sleep"><span class="ico">✋</span>Sleep<small>letters naar vakjes</small></button>
+                    <button class="tool" data-tool="flitser"><span class="ico">⚡</span>Flitser<small>letters of woorden flitsen</small></button>
                 </div>
                 <details class="load" style="margin-top:14px">
                     <summary>Een bestaande link aanpassen</summary>
@@ -439,7 +443,7 @@
                 <div id="form"></div>
             </div>
 
-            <div class="card">
+            <div class="card" id="view-card">
                 <h2><span class="step">3</span> Waar komt het?</h2>
                 <div class="segment" role="group" aria-label="Weergave">
                     <button data-view="klein">Genially (klein)</button>
@@ -518,6 +522,12 @@
                 base: `${ROOT}sleepoefening/`,
                 iframeTitle: "Letterlab sleepoefening",
             },
+            flitser: {
+                title: "Flitser",
+                repo: "flitser",
+                base: `${ROOT}flitser/`,
+                iframeTitle: "Letterlab flitser",
+            },
         };
 
         // Dezelfde klankgroepen als in de tools: de langste eerst.
@@ -586,6 +596,10 @@
                     text: "", mode: "letters", gaps: [], extras: [], order: [],
                     mix: true, weg: true, klank: false, woord: false, luister: false,
                 },
+                flitser: {
+                    soort: "klanken", items: [], woorden: "", samen: 1,
+                    tempo: "klik", mix: false, herhaal: false, luister: false,
+                },
             };
         }
 
@@ -594,7 +608,7 @@
             const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
             if (saved && saved.tool) {
                 state = Object.assign(freshState(), saved);
-                ["media", "dictee", "klikklak", "sleep"].forEach((key) => {
+                ["media", "dictee", "klikklak", "sleep", "flitser"].forEach((key) => {
                     state[key] = Object.assign(freshState()[key], saved[key] || {});
                 });
             }
@@ -1288,6 +1302,161 @@
         }
 
         // ============================================================
+        // 6b. FLITSER
+        // ============================================================
+
+        const TEMPO_HINTS = {
+            klik: "De cursist of de lesgever tikt telkens zelf door. Goed voor Genially.",
+            traag: "Elke flits blijft 3 seconden staan.",
+            gemiddeld: "Elke flits blijft 1,8 seconde staan.",
+            snel: "Elke flits blijft 0,9 seconde staan. Vooral voor het instructiemoment.",
+        };
+
+        function flashItems() {
+            const f = state.flitser;
+            return f.soort === "klanken" ? f.items : splitList(f.woorden.replace(/\n/g, ","));
+        }
+
+        function renderFlashForm() {
+            const f = state.flitser;
+            $("#form").innerHTML = `
+                <div class="label">Wat flitsen?</div>
+                <div class="segment" role="group" aria-label="Soort" id="f-soort">
+                    <button data-soort="klanken">Letters en klanken</button>
+                    <button data-soort="woorden">Woorden</button>
+                </div>
+                <div id="f-klanken" style="margin-top:14px">
+                    <div class="label">Gekozen <span class="hint" style="display:inline">(in deze volgorde, tik om weg te halen)</span></div>
+                    <div class="chips" id="f-chosen"></div>
+                    <div class="mini-actions"><button class="mini" data-f="clear">Alles weghalen</button></div>
+                    <div id="f-palette"></div>
+                    <div class="add-row">
+                        <input type="text" id="f-own" placeholder="Andere letter of klank, bv. x, c" autocomplete="off" autocapitalize="off">
+                        <button class="btn light" data-f="own">Toevoegen</button>
+                    </div>
+                </div>
+                <label class="field" id="f-woorden-box" style="margin-top:14px">
+                    <span>Woorden</span>
+                    <input type="text" id="f-woorden" value="${escapeHtml(f.woorden)}" placeholder="bv. maan, kip, vis, boek"
+                        autocomplete="off" autocapitalize="off" spellcheck="false">
+                    <p class="hint">Gescheiden door komma's.</p>
+                </label>
+
+                <div class="label" style="margin-top:16px">Hoeveel tegelijk?</div>
+                <div class="segment" role="group" aria-label="Hoeveel tegelijk" id="f-samen">
+                    ${[1, 2, 3, 4, 5].map((n) => `<button data-samen="${n}">${n === 1 ? "één voor één" : n}</button>`).join("")}
+                </div>
+
+                <div class="label" style="margin-top:16px">Begintempo <span class="hint" style="display:inline">(ook aan te passen in de flitser zelf)</span></div>
+                <div class="segment" role="group" aria-label="Tempo" id="f-tempo">
+                    <button data-tempo="klik">Bij een klik</button>
+                    <button data-tempo="traag">Traag</button>
+                    <button data-tempo="gemiddeld">Gemiddeld</button>
+                    <button data-tempo="snel">Snel</button>
+                </div>
+                <p class="hint" id="f-tempo-hint"></p>
+
+                <div class="switches" style="margin-top:14px">
+                    ${switchHtml("f-mix", "Door elkaar", "Elke ronde een andere volgorde.", f.mix)}
+                    <div id="f-herhaal-box">${switchHtml("f-herhaal", "Blijven herhalen", "Na de laatste flits begint het opnieuw.", f.herhaal)}</div>
+                    ${switchHtml("f-luister", "Luisterknop", "De cursist zegt eerst zelf de klank of het woord en controleert dan door te luisteren.", f.luister)}
+                </div>`;
+
+            $("#f-woorden").addEventListener("input", (event) => {
+                f.woorden = event.target.value;
+                update();
+            });
+            ["mix", "herhaal", "luister"].forEach((key) => {
+                $(`#f-${key}`).addEventListener("change", (event) => {
+                    f[key] = event.target.checked;
+                    update();
+                });
+            });
+            $("#form").addEventListener("click", flashClick);
+            $("#form").addEventListener("keydown", (event) => {
+                if (event.key === "Enter" && event.target.id === "f-own") addFlashOwn();
+            });
+            refreshFlash();
+        }
+
+        function addFlashOwn() {
+            const f = state.flitser;
+            splitList($("#f-own").value.toLowerCase()).forEach((item) => {
+                if (!f.items.includes(item)) f.items.push(item);
+            });
+            $("#f-own").value = "";
+            refreshFlash();
+            update();
+            $("#f-own").focus();
+        }
+
+        function flashClick(event) {
+            const f = state.flitser;
+            const target = event.target.closest("button");
+            if (!target || state.tool !== "flitser") return;
+            const data = target.dataset;
+            if (data.soort) f.soort = data.soort;
+            else if (data.samen) f.samen = Number(data.samen);
+            else if (data.tempo) f.tempo = data.tempo;
+            else if (data.f === "clear") f.items = [];
+            else if (data.f === "own") {
+                addFlashOwn();
+                return;
+            } else if (data.fsound !== undefined) {
+                const sound = data.fsound;
+                f.items = f.items.includes(sound)
+                    ? f.items.filter((x) => x !== sound)
+                    : [...f.items, sound];
+            } else if (data.fremove !== undefined) {
+                f.items = f.items.filter((x) => x !== data.fremove);
+            } else {
+                return;
+            }
+            refreshFlash();
+            update();
+        }
+
+        function refreshFlash() {
+            const f = state.flitser;
+            const press = (selector, attribute, value) => {
+                document.querySelectorAll(selector).forEach((button) => {
+                    button.setAttribute("aria-pressed", String(button.dataset[attribute] === String(value)));
+                });
+            };
+            press("#f-soort button", "soort", f.soort);
+            press("#f-samen button", "samen", f.samen);
+            press("#f-tempo button", "tempo", f.tempo);
+            $("#f-klanken").classList.toggle("hidden", f.soort !== "klanken");
+            $("#f-woorden-box").classList.toggle("hidden", f.soort !== "woorden");
+            $("#f-herhaal-box").classList.toggle("hidden", f.tempo === "klik");
+            $("#f-tempo-hint").textContent = TEMPO_HINTS[f.tempo];
+            $("#f-chosen").innerHTML = f.items.length
+                ? f.items.map((item) => `<button class="chip removable" aria-pressed="true"
+                    data-fremove="${escapeHtml(item)}">${escapeHtml(item)}</button>`).join("")
+                : `<span class="hint">Nog niets gekozen.</span>`;
+            $("#f-palette").innerHTML = paletteHtml(f.items, "fsound");
+        }
+
+        function flashLink() {
+            const f = state.flitser;
+            const list = flashItems();
+            if (!list.length) {
+                return { problem: f.soort === "klanken" ? "Kies minstens één letter of klank." : "Typ minstens één woord." };
+            }
+            let url = `${TOOLS.flitser.base}?items=${list.map(enc).join(",")}`;
+            if (f.samen > 1) url += `&samen=${f.samen}`;
+            url += `&tempo=${f.tempo}`;
+            if (f.mix) url += "&mix=ja";
+            if (f.herhaal && f.tempo !== "klik") url += "&herhaal=ja";
+            if (f.luister) url += "&luister=ja";
+            let warning = "";
+            if (f.samen > list.length) {
+                warning = `Er zijn maar ${list.length} items: ze komen allemaal tegelijk op het scherm.`;
+            }
+            return { url, warning };
+        }
+
+        // ============================================================
         // 7. VOLLEDIGE VERSIE: instructie, afbeelding en audio
         // ============================================================
 
@@ -1362,6 +1531,10 @@
 
         async function renderMedia() {
             const box = $("#media");
+            if (state.tool === "flitser") {
+                box.classList.add("hidden");
+                return;
+            }
             const volledig = state.view === "volledig";
             const tool = state.tool;
             // De audio van de sleepoefening werkt ook in de kleine versie
@@ -1457,6 +1630,7 @@
         // ============================================================
 
         function defaultHeight() {
+            if (state.tool === "flitser") return 450;
             return state.tool === "sleep" && state.view === "klein" ? 200 : 650;
         }
 
@@ -1468,14 +1642,17 @@
         function build() {
             const result = state.tool === "dictee"
                 ? dictationLink()
-                : state.tool === "klikklak" ? clickBookLink() : sleepLink();
+                : state.tool === "klikklak" ? clickBookLink()
+                    : state.tool === "flitser" ? flashLink() : sleepLink();
             if (result.problem) return result;
-            const url = result.url + mediaPart();
+            const url = result.url + (state.tool === "flitser" ? "" : mediaPart());
             const height = currentHeight();
-            const transparent = state.tool === "klikklak"
+            const transparent = state.tool === "klikklak" || state.tool === "flitser"
                 || (state.tool === "sleep" && state.view === "klein");
             const style = transparent ? "border:none;background:transparent;" : "border:none;";
-            const extra = state.tool === "dictee" ? "" : ` allowtransparency="true"`;
+            let extra = state.tool === "dictee" ? "" : ` allowtransparency="true"`;
+            // De flitser mag in Genially naar volledig scherm.
+            if (state.tool === "flitser") extra += ` allow="fullscreen" allowfullscreen`;
             const code = `<iframe src="${url}" width="100%" height="${height}" style="${style}"${extra} title="${TOOLS[state.tool].iframeTitle}"></iframe>`;
             return { url, code, height, warning: result.warning };
         }
@@ -1648,8 +1825,25 @@
                 const { answers } = sleepExercise();
                 state.sleep.extras = unique(keuzes.filter((card) => !answers.includes(card)));
                 state.sleep.order = unique([...keuzes, ...answers]);
+            } else if (path.includes("/flitser")) {
+                const list = splitList(get("items").replace(/\|/g, ","));
+                if (!list.length) return "In deze flitserlink staan geen letters of woorden (items=).";
+                state.tool = "flitser";
+                const yes = (name) => ["ja", "j", "yes", "1", "true", "waar"].includes(get(name).toLowerCase());
+                const known = new Set(SOUND_GROUPS.flatMap((group) => group.items));
+                const allSounds = list.every((item) => known.has(item.toLowerCase()) || item.length <= 2);
+                state.flitser = Object.assign(fresh.flitser, {
+                    soort: allSounds ? "klanken" : "woorden",
+                    items: allSounds ? list : [],
+                    woorden: allSounds ? "" : list.join(", "),
+                    samen: Math.min(5, Math.max(1, Number.parseInt(get("samen"), 10) || 1)),
+                    tempo: ["traag", "gemiddeld", "snel"].includes(get("tempo").toLowerCase()) ? get("tempo").toLowerCase() : "klik",
+                    mix: yes("mix"),
+                    herhaal: yes("herhaal"),
+                    luister: yes("luister"),
+                });
             } else {
-                return "Deze link hoort niet bij het dictee, het klik-klakboekje of de sleepoefening.";
+                return "Deze link hoort niet bij een Letterlab-oefening.";
             }
             return "";
         }
@@ -1670,7 +1864,9 @@
             $("#form-title").textContent = TOOLS[state.tool].title;
             if (state.tool === "dictee") renderDictationForm();
             else if (state.tool === "klikklak") renderClickBookForm();
+            else if (state.tool === "flitser") renderFlashForm();
             else renderSleepForm();
+            $("#view-card").classList.toggle("hidden", state.tool === "flitser");
             renderView();
         }
 
@@ -1690,7 +1886,7 @@
                     sleep: "Met instructie-audio, afbeelding en audio. Om los te gebruiken.",
                 },
             };
-            $("#view-hint").textContent = hints[state.view][state.tool];
+            $("#view-hint").textContent = hints[state.view][state.tool] || "";
             renderMedia();
             update();
         }
