@@ -292,6 +292,22 @@
             cursor: default;
         }
         .chip.removable::after { content: " ×"; opacity: 0.6; }
+        /* Dictee-reeks: woordknop met een klein kruisje ernaast. */
+        .d-items { align-items: center; margin-bottom: 6px; }
+        .d-item { display: inline-flex; align-items: stretch; }
+        .d-item .chip:not(:only-child) { border-radius: 999px 0 0 999px; }
+        .d-remove {
+            padding: 0 10px;
+            border: 2px solid var(--line);
+            border-left: 0;
+            border-radius: 0 999px 999px 0;
+            background: #fff;
+            color: var(--muted);
+            cursor: pointer;
+            font: inherit;
+        }
+        .d-remove:hover { color: var(--pink); }
+        .mini:disabled { opacity: 0.4; cursor: default; }
         .palette { margin-top: 12px; display: grid; gap: 10px; }
         .palette .group-label {
             font-size: 0.8rem;
@@ -590,8 +606,11 @@
                 view: "klein",
                 height: null,
                 media: { instructie: "", beeld: "", audio: "" },
-                dictee: { word: "", missing: [], voorbeeld: false, toetsen: "letters" },
-                klikklak: { positions: [[], [], []], woorden: true, uit: [], active: 0 },
+                dictee: {
+                    items: [{ word: "", missing: [], beeld: "", audio: "" }],
+                    active: 0, voorbeeld: false, toetsen: "letters",
+                },
+                klikklak: { positions: [[], [], []], woorden: true, uit: [], active: 0, onder: "" },
                 sleep: {
                     text: "", mode: "letters", gaps: [], extras: [], order: [],
                     mix: true, weg: true, klank: false, woord: false, luister: false,
@@ -611,6 +630,19 @@
                 ["media", "dictee", "klikklak", "sleep", "flitser"].forEach((key) => {
                     state[key] = Object.assign(freshState()[key], saved[key] || {});
                 });
+                // Vroeger had het dictee maar één woord (word en missing).
+                const oldDictation = saved.dictee || {};
+                if (!Array.isArray(oldDictation.items) && oldDictation.word !== undefined) {
+                    state.dictee.items = [{
+                        word: oldDictation.word || "",
+                        missing: oldDictation.missing || [],
+                        beeld: saved.media?.beeld || "",
+                        audio: saved.media?.audio || "",
+                    }];
+                    state.dictee.active = 0;
+                }
+                delete state.dictee.word;
+                delete state.dictee.missing;
             }
         } catch {
             // Geen opslag beschikbaar: gewoon opnieuw beginnen.
@@ -691,14 +723,34 @@
         // 4. DICTEE
         // ============================================================
 
+        // Een dictee is één woord (Genially) of een reeks woorden (volledige
+        // versie). Elk woord heeft zijn eigen ontbrekende stukjes, afbeelding
+        // en audio. Het formulier bewerkt telkens het aangetikte woord.
+        function freshDictationItem() {
+            return { word: "", missing: [], beeld: "", audio: "" };
+        }
+
+        function dItem() {
+            const d = state.dictee;
+            if (!d.items.length) d.items.push(freshDictationItem());
+            d.active = Math.min(Math.max(d.active, 0), d.items.length - 1);
+            return d.items[d.active];
+        }
+
+        // Alleen de volledige versie kan meerdere woorden na elkaar tonen.
+        function dictationSeriesAllowed() {
+            return state.view === "volledig";
+        }
+
         function renderDictationForm() {
             const d = state.dictee;
             $("#form").innerHTML = `
+                <div id="d-series"></div>
                 <label class="field">
-                    <span>Woord</span>
-                    <input type="text" id="d-word" class="big-input" value="${escapeHtml(d.word)}"
+                    <span id="d-word-label">Woord</span>
+                    <input type="text" id="d-word" class="big-input" value="${escapeHtml(dItem().word)}"
                         autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="bv. kraan">
-                    <p class="hint">Eén woord per oefening. Cijfers mogen ook (bv. 12).</p>
+                    <p class="hint" id="d-word-hint"></p>
                 </label>
                 <div class="label">Tik aan wat de cursist zelf typt</div>
                 <div class="tiles" id="d-tiles"></div>
@@ -717,14 +769,16 @@
                 </div>`;
 
             $("#d-word").addEventListener("input", (event) => {
-                const before = dictationGraphemes(d.word);
-                d.word = event.target.value;
-                const after = dictationGraphemes(d.word);
+                const item = dItem();
+                const before = dictationGraphemes(item.word);
+                item.word = event.target.value;
+                const after = dictationGraphemes(item.word);
                 // Nieuw woord: standaard moet alles getypt worden.
                 if (before.join("|") !== after.join("|")) {
-                    d.missing = after.map((_, index) => index);
+                    item.missing = after.map((_, index) => index);
                 }
                 refreshDictation();
+                syncDictationMedia();
                 update();
             });
             $("#d-voorbeeld").addEventListener("change", (event) => {
@@ -739,59 +793,171 @@
             const d = state.dictee;
             const target = event.target.closest("button");
             if (!target || state.tool !== "dictee") return;
-            const parts = dictationGraphemes(d.word);
+            const item = dItem();
+            const parts = dictationGraphemes(item.word);
+            let otherWord = false;
             if (target.dataset.tile !== undefined) {
                 const index = Number(target.dataset.tile);
-                d.missing = d.missing.includes(index)
-                    ? d.missing.filter((x) => x !== index)
-                    : [...d.missing, index].sort((a, b) => a - b);
+                item.missing = item.missing.includes(index)
+                    ? item.missing.filter((x) => x !== index)
+                    : [...item.missing, index].sort((a, b) => a - b);
             } else if (target.dataset.d === "all") {
-                d.missing = parts.map((_, index) => index);
+                item.missing = parts.map((_, index) => index);
             } else if (target.dataset.d === "none") {
-                d.missing = [];
+                item.missing = [];
             } else if (target.dataset.keys) {
                 d.toetsen = target.dataset.keys;
+            } else if (target.dataset.d === "add") {
+                d.items.push(freshDictationItem());
+                d.active = d.items.length - 1;
+                otherWord = true;
+            } else if (target.dataset.dItem !== undefined) {
+                d.active = Number(target.dataset.dItem);
+                otherWord = true;
+            } else if (target.dataset.dRemove !== undefined) {
+                const removed = Number(target.dataset.dRemove);
+                d.items.splice(removed, 1);
+                if (d.active >= removed) d.active -= 1;
+                otherWord = true;
+            } else if (target.dataset.dMove !== undefined) {
+                const [from, step] = target.dataset.dMove.split(":").map(Number);
+                const to = from + step;
+                if (to < 0 || to >= d.items.length) return;
+                const [moved] = d.items.splice(from, 1);
+                d.items.splice(to, 0, moved);
+                d.active = to;
             } else {
                 return;
             }
             refreshDictation();
+            if (otherWord) {
+                const input = $("#d-word");
+                input.value = dItem().word;
+                if (target.dataset.d === "add") input.focus();
+            }
+            syncDictationMedia();
             update();
+        }
+
+        // De velden Afbeelding en Audio horen bij het aangetikte woord.
+        function syncDictationMedia() {
+            if (state.tool !== "dictee") return;
+            const item = dItem();
+            const beeld = $("#m-beeld");
+            const audio = $("#m-audio");
+            if (beeld && document.activeElement !== beeld) beeld.value = item.beeld;
+            if (audio && document.activeElement !== audio) audio.value = item.audio;
+            const note = $("#m-word-note");
+            if (note) {
+                const many = dictationSeriesAllowed() && state.dictee.items.length > 1;
+                note.classList.toggle("hidden", !many);
+                note.textContent = many
+                    ? `Afbeelding en audio horen bij woord ${state.dictee.active + 1}${item.word.trim() ? ` (${item.word.trim()})` : ""}. Tik bij stap 2 een ander woord aan om het zijne in te vullen.`
+                    : "";
+            }
         }
 
         function refreshDictation() {
             const d = state.dictee;
-            const parts = dictationGraphemes(d.word);
-            d.missing = d.missing.filter((index) => index < parts.length);
+            const item = dItem();
+            const parts = dictationGraphemes(item.word);
+            item.missing = item.missing.filter((index) => index < parts.length);
+
+            const series = dictationSeriesAllowed();
+            const box = $("#d-series");
+            if (box) {
+                box.innerHTML = series ? `
+                    <div class="label">Woorden in deze oefening</div>
+                    <div class="chips d-items">
+                        ${d.items.map((entry, index) => `<span class="d-item">
+                            <button class="chip" data-d-item="${index}" aria-pressed="${index === d.active}">${index + 1}. ${escapeHtml(entry.word.trim() || "…")}</button>${d.items.length > 1 ? `<button class="d-remove" data-d-remove="${index}" aria-label="Woord ${index + 1} weghalen">×</button>` : ""}
+                        </span>`).join("")}
+                        <button class="mini" data-d="add">+ woord</button>
+                    </div>
+                    ${d.items.length > 1 ? `<div class="mini-actions">
+                        <button class="mini" data-d-move="${d.active}:-1" ${d.active === 0 ? "disabled" : ""}>← eerder</button>
+                        <button class="mini" data-d-move="${d.active}:1" ${d.active === d.items.length - 1 ? "disabled" : ""}>later →</button>
+                    </div>` : ""}
+                    <p class="hint">${d.items.length > 1
+                        ? "Na een juist antwoord verschijnt vanzelf het volgende woord. Tik een woord aan om het aan te passen."
+                        : "Meerdere woorden na elkaar in één link? Kies + woord."}</p>`
+                    : "";
+            }
+            const hint = $("#d-word-hint");
+            if (hint) {
+                hint.textContent = series
+                    ? "Cijfers mogen ook (bv. 12)."
+                    : d.items.length > 1
+                        ? `Genially (klein) toont één woord: het aangetikte woord. Kies bij stap 3 Volledig voor de hele reeks van ${d.items.length} woorden.`
+                        : "Eén woord per oefening. Cijfers mogen ook (bv. 12).";
+            }
+            const wordLabel = $("#d-word-label");
+            if (wordLabel) {
+                wordLabel.textContent = series && d.items.length > 1 ? `Woord ${d.active + 1}` : "Woord";
+            }
+
             $("#d-tiles").innerHTML = parts.length
                 ? parts.map((part, index) => `<button class="tile" data-tile="${index}"
-                    aria-pressed="${d.missing.includes(index)}">${escapeHtml(part)}<span class="nr">${index + 1}</span></button>`).join("")
+                    aria-pressed="${item.missing.includes(index)}">${escapeHtml(part)}<span class="nr">${index + 1}</span></button>`).join("")
                 : `<span class="empty">Typ eerst een woord.</span>`;
             document.querySelectorAll("#d-keys button").forEach((button) => {
                 button.setAttribute("aria-pressed", String(button.dataset.keys === d.toetsen));
             });
         }
 
+        // De woorden die in de link komen: in Genially (klein) alleen het
+        // aangetikte woord, in de volledige versie de hele reeks.
+        function dictationItemsForLink() {
+            return dictationSeriesAllowed() ? state.dictee.items : [dItem()];
+        }
+
         function dictationLink() {
             const d = state.dictee;
-            const parts = dictationGraphemes(d.word);
-            if (!parts.length) return { problem: "Typ een woord." };
-            if (/\s/.test(d.word.trim())) {
-                return { problem: "Het dictee werkt met één woord. Haal de spatie weg." };
+            const items = dictationItemsForLink();
+            const many = items.length > 1;
+            for (let i = 0; i < items.length; i += 1) {
+                const item = items[i];
+                const which = many ? `Woord ${i + 1}: ` : "";
+                const parts = dictationGraphemes(item.word);
+                if (!parts.length) {
+                    return { problem: many ? `${which}typ een woord, of haal het weg met ×.` : "Typ een woord." };
+                }
+                if (/\s/.test(item.word.trim())) {
+                    return { problem: `${which}het dictee werkt met één woord. Haal de spatie weg.` };
+                }
+                if (!item.missing.length) {
+                    return { problem: `${which}tik minstens één stukje aan dat de cursist moet typen.` };
+                }
             }
-            if (!d.missing.length) return { problem: "Tik minstens één stukje aan dat de cursist moet typen." };
-            const hasDigit = /[0-9]/.test(d.word);
-            const hasLetter = /[a-zà-ÿ]/i.test(d.word);
+            const allText = items.map((item) => item.word).join("");
+            const hasDigit = /[0-9]/.test(allText);
+            const hasLetter = /[a-zà-ÿ]/i.test(allText);
             let warning = "";
             if (hasDigit && d.toetsen === "letters") {
                 warning = "Er staan cijfers in het woord: kies bij Toetsenbord ‘Cijfers’ of ‘Letters + cijfers’.";
             } else if (hasLetter && d.toetsen === "cijfers") {
                 warning = "Er moeten letters getypt worden: kies ‘Letters’ of ‘Letters + cijfers’.";
             }
-            let url = `${TOOLS.dictee.base}?woord=${enc(parts.join(""))}`
-                + `&ontbreekt=${d.missing.map((x) => x + 1).join(",")}`;
+            const words = items.map((item) => enc(dictationGraphemes(item.word).join(""))).join("|");
+            const missing = items.map((item) => item.missing.map((x) => x + 1).join(",")).join("|");
+            let url = `${TOOLS.dictee.base}?woord=${words}&ontbreekt=${missing}`;
             if (d.voorbeeld) url += "&voorbeeld=ja";
             if (d.toetsen !== "letters") url += `&toetsen=${d.toetsen}`;
             return { url, warning };
+        }
+
+        // Afbeelding en audio per woord, in dezelfde volgorde als de woorden.
+        // Staat overal hetzelfde, dan volstaat één waarde.
+        function dictationMediaPart() {
+            const items = dictationItemsForLink();
+            let part = "";
+            ["beeld", "audio"].forEach((key) => {
+                const values = items.map((item) => (item[key] || "").trim());
+                if (!values.some(Boolean)) return;
+                const same = values.every((value) => value === values[0]);
+                part += `&${key}=${same ? enc(values[0]) : values.map(enc).join("|")}`;
+            });
+            return part;
         }
 
         // ============================================================
@@ -810,7 +976,12 @@
                 <div class="mini-actions" style="margin-top:10px">
                     <button class="btn light" data-k="add-position">+ positie</button>
                 </div>
-                <div id="k-words" style="margin-top:18px"></div>`;
+                <div id="k-words" style="margin-top:18px"></div>
+                <div class="label" style="margin-top:18px">Onder het boekje</div>
+                <div class="segment" role="group" aria-label="Onder het boekje" id="k-onder">
+                    ${BELOW_CHOICES.map((choice) => `<button data-onder="${choice.value}">${choice.label}</button>`).join("")}
+                </div>
+                <p class="hint" id="k-onder-hint"></p>`;
 
             $("#k-woorden").addEventListener("change", (event) => {
                 k.woorden = event.target.checked;
@@ -824,6 +995,24 @@
                 }
             });
             refreshClickBook();
+        }
+
+        // Wat er onder het boekje staat (onder= in de link).
+        const BELOW_CHOICES = [
+            { value: "", label: "Woord + luisterknop", hint: "Zoals altijd: het gevormde woord met een luisterknop." },
+            { value: "luisteren", label: "Woord na luisteren", hint: "De cursist leest eerst zelf en controleert met de luisterknop. Dan verschijnt het woord." },
+            { value: "audio", label: "Alleen luisterknop", hint: "Het gevormde woord staat er niet onder; de luisterknop wel." },
+            { value: "woord", label: "Alleen woord", hint: "Het gevormde woord zonder luisterknop." },
+            { value: "geen", label: "Niets", hint: "Alleen het boekje. Handig als je zelf voorleest tijdens de instructie." },
+        ];
+
+        function refreshBelow() {
+            const k = state.klikklak;
+            document.querySelectorAll("#k-onder button").forEach((button) => {
+                button.setAttribute("aria-pressed", String(button.dataset.onder === k.onder));
+            });
+            const choice = BELOW_CHOICES.find((item) => item.value === k.onder) || BELOW_CHOICES[0];
+            if ($("#k-onder-hint")) $("#k-onder-hint").textContent = choice.hint;
         }
 
         function addOwnSound() {
@@ -877,6 +1066,8 @@
             } else if (data.removeSound !== undefined) {
                 const [index, sound] = [Number(data.index), data.removeSound];
                 k.positions[index] = k.positions[index].filter((x) => x !== sound);
+            } else if (data.onder !== undefined) {
+                k.onder = data.onder;
             } else if (data.word !== undefined) {
                 const word = data.word;
                 k.uit = k.uit.includes(word)
@@ -933,6 +1124,7 @@
             }).join("");
 
             renderWordList();
+            refreshBelow();
         }
 
         function clickBookGroups() {
@@ -1032,6 +1224,7 @@
                     warning = "Dit boekje maakt geen enkel bestaand woord.";
                 }
             }
+            if (k.onder) url += `&onder=${k.onder}`;
             return { url, warning };
         }
 
@@ -1563,6 +1756,7 @@
                     <p class="hint">Nieuwe opname? Zet ze op GitHub in <b>assets/audio/instructies/</b> en open deze pagina opnieuw.</p>
                 </label>
                 ${withImage ? `
+                <p class="hint hidden" id="m-word-note"></p>
                 <label class="field">
                     <span>Afbeelding</span>
                     <input type="text" id="m-beeld" list="m-beeld-list" value="${escapeHtml(m.beeld)}"
@@ -1575,11 +1769,15 @@
                 const input = $(`#m-${key}`);
                 if (input) {
                     input.addEventListener("input", (event) => {
-                        m[key] = event.target.value.trim();
+                        // Bij het dictee horen afbeelding en audio bij het
+                        // aangetikte woord.
+                        const owner = tool === "dictee" && key !== "instructie" ? dItem() : m;
+                        owner[key] = event.target.value.trim();
                         update();
                     });
                 }
             });
+            syncDictationMedia();
 
             const select = $("#m-instructie-select");
             const options = await instructionOptions(tool);
@@ -1618,7 +1816,9 @@
             }
             let part = "&weergave=volledig";
             if (m.instructie) part += `&instructie=${enc(m.instructie)}`;
-            if (state.tool !== "klikklak") {
+            if (state.tool === "dictee") {
+                part += dictationMediaPart();
+            } else if (state.tool !== "klikklak") {
                 if (m.beeld) part += `&beeld=${enc(m.beeld)}`;
                 if (m.audio) part += `&audio=${enc(m.audio)}`;
             }
@@ -1779,16 +1979,32 @@
             if (height) state.height = Number(height[1]);
 
             if (path.includes("/dictee")) {
-                const word = get("woord");
-                if (!word) return "In deze dicteelink staat geen woord.";
-                state.tool = "dictee";
-                const parts = dictationGraphemes(word);
-                state.dictee = Object.assign(fresh.dictee, {
-                    word,
-                    missing: get("ontbreekt").split(",")
+                // Eén woord of een reeks, gescheiden door "|".
+                const listOf = (name) => get(name).split("|").map((x) => x.trim());
+                const valueFor = (list, index) => (list.length === 1 ? list[0] : (list[index] ?? ""));
+                const words = listOf("woord");
+                const positions = listOf("ontbreekt");
+                const images = listOf("beeld");
+                const audios = listOf("audio");
+                const items = words.map((word, index) => {
+                    const parts = dictationGraphemes(word);
+                    let missing = valueFor(positions, index).split(",")
                         .map((x) => Number.parseInt(x, 10) - 1)
-                        .filter((x) => x >= 0 && x < parts.length),
-                    voorbeeld: get("voorbeeld").toLowerCase() === "ja",
+                        .filter((x) => x >= 0 && x < parts.length);
+                    if (!missing.length) missing = parts.map((_, i) => i);
+                    return {
+                        word,
+                        missing,
+                        beeld: valueFor(images, index),
+                        audio: valueFor(audios, index),
+                    };
+                }).filter((item) => dictationGraphemes(item.word).length);
+                if (!items.length) return "In deze dicteelink staat geen woord.";
+                state.tool = "dictee";
+                state.dictee = Object.assign(fresh.dictee, {
+                    items,
+                    active: 0,
+                    voorbeeld: get("voorbeeld").toLowerCase().startsWith("ja"),
                     toetsen: ["cijfers", "beide"].includes(get("toetsen").toLowerCase())
                         ? get("toetsen").toLowerCase() : "letters",
                 });
@@ -1805,6 +2021,8 @@
                     woorden: get("woorden").toLowerCase() !== "nee",
                     uit: splitList(get("uit").toLowerCase()),
                     active: 0,
+                    onder: BELOW_CHOICES.some((choice) => choice.value === get("onder").toLowerCase())
+                        ? get("onder").toLowerCase() : "",
                 });
             } else if (path.includes("/sleepoefening")) {
                 const oef = get("oef");
@@ -1881,12 +2099,13 @@
                     sleep: "Alleen het woord of de zin en de kaartjes, met een doorzichtige achtergrond.",
                 },
                 volledig: {
-                    dictee: "Met instructie-audio, luisterknop en afbeelding. Om los te gebruiken.",
+                    dictee: "Met instructie-audio, luisterknop en afbeelding. Om los te gebruiken. Hier kun je ook meerdere woorden na elkaar zetten.",
                     klikklak: "Met een instructie-audio bovenaan. Om los te gebruiken.",
                     sleep: "Met instructie-audio, afbeelding en audio. Om los te gebruiken.",
                 },
             };
             $("#view-hint").textContent = hints[state.view][state.tool] || "";
+            if (state.tool === "dictee") refreshDictation();
             renderMedia();
             update();
         }
