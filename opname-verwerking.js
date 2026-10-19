@@ -11,7 +11,9 @@
 //                          daaronder volledig stil (-100 dB)
 //
 // Daarna wordt de stilte vooraan en achteraan ingekort, zodat een
-// woord in het klik-klakboekje meteen begint.
+// woord in het klik-klakboekje meteen begint. Alleen echte stilte (wat
+// de noise-gate al stil maakte) gaat weg: de uitklank van een woord
+// blijft volledig, met nog 0,3 s marge.
 //
 // Gebruik: LetterlabAudio.process(samples, sampleRate) → Float32Array
 // ================================================================
@@ -28,8 +30,9 @@
         gateHoldMs: 50,
         gateDecayMs: 50,
         gateReductionDb: -100,
-        keepBeforeMs: 80,
-        keepAfterMs: 150,
+        keepBeforeMs: 100,
+        keepAfterMs: 300,
+        fadeMs: 20,
     };
 
     const dbToGain = (db) => Math.pow(10, db / 20);
@@ -180,7 +183,15 @@
         if (first >= samples.length) return samples;
         const start = Math.max(0, first - Math.round((rate * options.keepBeforeMs) / 1000));
         const end = Math.min(samples.length, last + 1 + Math.round((rate * options.keepAfterMs) / 1000));
-        return samples.slice(start, end);
+        const cut = samples.slice(start, end);
+        // Heel kort in- en uitfaden, zodat er nooit een tik hoorbaar is.
+        const fade = Math.min(Math.round((rate * options.fadeMs) / 1000), Math.floor(cut.length / 2));
+        for (let i = 0; i < fade; i += 1) {
+            const gain = i / fade;
+            cut[i] *= gain;
+            cut[cut.length - 1 - i] *= gain;
+        }
+        return cut;
     }
 
     // ---------- Alles samen ----------

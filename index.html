@@ -462,6 +462,24 @@
         .audio-check .chip.no-audio { border-color: var(--pink); background: var(--pink-soft); }
         .audio-check span.chip { cursor: default; }
         .new-instruction { margin-top: 8px; }
+        .audio-check .thumb {
+            height: 44px;
+            width: auto;
+            vertical-align: middle;
+            margin-left: 8px;
+            border-radius: 6px;
+            border: 1px solid var(--line);
+        }
+        #up-image-preview {
+            display: block;
+            max-width: 100%;
+            max-height: 220px;
+            margin: 4px auto 8px;
+            border-radius: 10px;
+            border: 1px solid var(--line);
+            background: repeating-conic-gradient(#eef5f5 0 25%, #fff 0 50%) 0 0 / 16px 16px;
+        }
+        #up-image-preview.hidden { display: none; }
 
         /* Venster om een opname toe te voegen */
         dialog.upload {
@@ -570,14 +588,24 @@
         <form method="dialog" id="upload-form">
             <h3 id="up-title">Nieuwe opname</h3>
             <label class="field hidden" id="up-name-box">
-                <span>Tekst van de instructie</span>
+                <span id="up-name-label">Tekst van de instructie</span>
                 <input type="text" id="up-name" autocomplete="off" placeholder="bv. Zoek het woord">
-                <p class="hint">Dit wordt ook de naam in de lijst.</p>
+                <p class="hint" id="up-name-hint">Dit wordt ook de naam in de lijst.</p>
             </label>
             <div class="choice hidden" id="up-folder">
                 <label><input type="radio" name="up-folder" value="woord"> <span><b>Bestaand woord</b></span></label>
                 <label><input type="radio" name="up-folder" value="nonsens"> <span><b>Nonsenswoord</b> <span class="hint" style="display:inline">(voor het klik-klakboekje)</span></span></label>
             </div>
+            <div id="up-image-box" class="hidden">
+                <div class="label">Afbeelding</div>
+                <div class="rec-row">
+                    <button type="button" class="btn" id="up-image-button">🖼 Afbeelding kiezen</button>
+                    <input type="file" id="up-image-file" accept="image/*" class="hidden">
+                </div>
+                <img id="up-image-preview" class="hidden" alt="">
+                <p class="hint" id="up-image-info"></p>
+            </div>
+            <div id="up-audio-box">
             <div class="label">Opname</div>
             <div class="rec-row">
                 <button type="button" class="btn" id="up-record">🎙 Opnemen</button>
@@ -586,6 +614,7 @@
             </div>
             <audio id="up-preview" controls class="hidden"></audio>
             <p class="hint" id="up-audio-hint">Neem op met de microfoon, of kies een geluidsbestand (mp3, m4a of wav).</p>
+            </div>
             <label class="field" id="up-code-box" style="margin-top:12px">
                 <span>Teamcode</span>
                 <input type="text" id="up-code" autocomplete="off" autocapitalize="off" spellcheck="false">
@@ -600,7 +629,7 @@
     </dialog>
 
     <!-- Woordenlijst van het klik-klakboekje (zelfde bestand als de tool). -->
-    <script src="../klikklak/wordlist-v1.js"></script>
+    <script src="../klikklak/wordlist-v1.js?v=3"></script>
     <!-- Verwerking van nieuwe opnames (zelfde stappen als de Audacity-macro). -->
     <script src="opname-verwerking.js"></script>
     <script>
@@ -680,10 +709,10 @@
         ];
 
         // Instructie-opnames die zeker bestaan, voor als GitHub de lijst
-        // even niet doorgeeft. (Map instructies/ van de audio-repository,
-        // en de oude mappen assets/audio/instructies/.)
+        // even niet doorgeeft. (Map audio/instructies/ van de assets-
+        // repository, en de oude mappen assets/audio/instructies/.)
         const KNOWN_INSTRUCTIONS = {
-            audio: [
+            assets: [
                 "Maak de zin af", "Maak de zin", "Maak het woord af",
                 "Maak het woord. Zet de letters op de juiste plaats",
                 "Maak het woord", "Schrijf de letter", "Typ de letter",
@@ -710,13 +739,15 @@
         // OPNAMES TOEVOEGEN
         // Het adres van de uploadverbinding (Cloudflare Worker). Leeg =
         // geen knoppen om opnames toe te voegen. Werkt de verbinding niet,
-        // dan verschijnen de knoppen ook niet. Zie audio/upload/HANDLEIDING.md.
+        // dan verschijnen de knoppen ook niet. Zie assets/upload/HANDLEIDING.md.
         const UPLOAD_URL = "https://letterlab-upload.alfacbelimino1.workers.dev";
         // ------------------------------------------------------------
 
-        // Alle opnames staan centraal in de repository 'audio'. De oude
-        // mappen worden nog nagekeken voor opnames die er alleen daar staan.
-        const AUDIO_BASE = `${ROOT}audio/`;
+        // Alle opnames en afbeeldingen staan centraal in de repository
+        // 'assets'. De oude mappen worden nog nagekeken voor bestanden die
+        // er alleen daar staan.
+        const AUDIO_BASE = `${ROOT}assets/audio/`;
+        const IMAGE_BASE = `${ROOT}assets/afbeeldingen/`;
         const OLD_WORD_AUDIO = `${ROOT}klikklak/assets/audio/woorden/`;
         const OLD_SENTENCE_AUDIO = `${ROOT}sleepoefening/assets/audio/oefeningen/`;
 
@@ -1890,11 +1921,11 @@
         // op hetzelfde adres staan.
         async function instructionOptions(tool) {
             const ownRepo = TOOLS[tool].repo;
-            const repos = ["audio", ownRepo, ...["dictee", "sleepoefening", "klikklak"].filter((r) => r !== ownRepo)];
+            const repos = ["assets", ownRepo, ...["dictee", "sleepoefening", "klikklak"].filter((r) => r !== ownRepo)];
             const options = [];
             const seen = new Set();
             for (const repo of repos) {
-                const folder = repo === "audio" ? "instructies" : "assets/audio/instructies";
+                const folder = repo === "assets" ? "audio/instructies" : "assets/audio/instructies";
                 const files = await listFolder(repo, folder);
                 const names = files
                     ? files.filter((name) => /\.(mp3|m4a|wav)$/i.test(name))
@@ -1903,7 +1934,7 @@
                     const label = withoutExtension(file);
                     if (seen.has(label.toLowerCase())) return;
                     seen.add(label.toLowerCase());
-                    const value = repo === ownRepo || repo === "audio"
+                    const value = repo === ownRepo || repo === "assets"
                         ? label
                         : `../${repo}/assets/audio/instructies/${file}`;
                     options.push({ label, value, repo });
@@ -1918,7 +1949,8 @@
                     <input type="text" id="m-audio" value="${escapeHtml(m.audio)}"
                         placeholder="Leeg = opname van het woord of de zin zelf zoeken" autocomplete="off">
                     <p class="hint">Bestandsnaam zonder .mp3. Bij een zin nodig voor de luisterknoppen. Typ <b>geen</b> voor geen luisterknop.</p>
-                </label>`;
+                </label>
+                <div class="audio-check" id="m-audio-check"></div>`;
         }
 
         async function renderMedia() {
@@ -1952,7 +1984,7 @@
                     <select id="m-instructie-select"><option>Even laden…</option></select>
                     <input type="text" id="m-instructie" class="hidden" style="margin-top:8px"
                         value="${escapeHtml(m.instructie)}" placeholder="Bestandsnaam zonder .mp3" autocomplete="off">
-                    ${uploadReady ? "" : `<p class="hint">Nieuwe opname? Zet ze op GitHub in de repository <b>audio</b>, map <b>instructies/</b>, en open deze pagina opnieuw.</p>`}
+                    ${uploadReady ? "" : `<p class="hint">Nieuwe opname? Zet ze op GitHub in de repository <b>assets</b>, map <b>audio/instructies/</b>, en open deze pagina opnieuw.</p>`}
                 </label>
                 ${uploadReady ? `<div class="new-instruction" style="margin:-6px 0 14px">
                     <button type="button" class="mini" id="m-instructie-new">+ Nieuwe instructie toevoegen</button>
@@ -1962,9 +1994,10 @@
                 <label class="field">
                     <span>Afbeelding</span>
                     <input type="text" id="m-beeld" list="m-beeld-list" value="${escapeHtml(m.beeld)}"
-                        placeholder="Bestandsnaam uit assets/afbeeldingen, of een link" autocomplete="off">
+                        placeholder="Naam van de afbeelding, of een link" autocomplete="off">
                     <datalist id="m-beeld-list"></datalist>
                 </label>
+                <div class="audio-check" id="m-beeld-check"></div>
                 ${audioFieldHtml(m)}` : ""}`;
 
             ["beeld", "audio", "instructie"].forEach((key) => {
@@ -1988,7 +2021,7 @@
             if (state.tool !== tool || !document.body.contains(select)) return;
             const known = options.some((option) => option.value === m.instructie);
             select.innerHTML = `<option value="">(geen instructie)</option>`
-                + options.map((option) => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}${option.repo !== TOOLS[tool].repo && option.repo !== "audio" ? ` (uit ${option.repo})` : ""}</option>`).join("")
+                + options.map((option) => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}${option.repo !== TOOLS[tool].repo && option.repo !== "assets" ? ` (uit ${option.repo})` : ""}</option>`).join("")
                 + `<option value="__eigen__">Andere naam typen…</option>`;
             select.value = !m.instructie ? "" : known ? m.instructie : "__eigen__";
             $("#m-instructie").classList.toggle("hidden", select.value !== "__eigen__");
@@ -2005,10 +2038,14 @@
             });
 
             if (withImage) {
-                const images = await listFolder(TOOLS[tool].repo, "assets/afbeeldingen");
+                const central = await listFolder("assets", "afbeeldingen");
+                const own = await listFolder(TOOLS[tool].repo, "assets/afbeeldingen");
                 const list = $("#m-beeld-list");
-                if (images && list) {
-                    list.innerHTML = images.map((name) => `<option value="${escapeHtml(withoutExtension(name))}">`).join("");
+                const names = unique([...(central || []), ...(own || [])]
+                    .filter((name) => /\.(webp|jpe?g|png)$/i.test(name))
+                    .map(withoutExtension));
+                if (list) {
+                    list.innerHTML = names.map((name) => `<option value="${escapeHtml(name)}">`).join("");
                 }
             }
         }
@@ -2150,14 +2187,14 @@
             playingAudio.play().catch(() => {});
         }
 
-        function addButtonHtml(kind, name, label) {
+        function addButtonHtml(kind, name, label, field = false) {
             if (!uploadReady) return "";
             return `<button type="button" class="add-audio" data-add-kind="${escapeHtml(kind)}"
-                data-add-name="${escapeHtml(name)}">${label}</button>`;
+                data-add-name="${escapeHtml(name)}"${field ? ` data-add-field="1"` : ""}>${label}</button>`;
         }
 
         // Eén woord of zin: één regel onder het invulvak.
-        function showSingleCheck(box, kind, name) {
+        function showSingleCheck(box, kind, name, field = false) {
             const key = `${kind}|${name}|${uploadReady}`;
             if (box.dataset.key === key) return;
             box.dataset.key = key;
@@ -2173,7 +2210,7 @@
                         <span class="hint" style="display:inline">Binnen enkele minuten werkt ze in de oefeningen.</span>`;
                 } else if (result.state === "nee") {
                     box.innerHTML = `<span class="missing">Niet gevonden:</span> nog geen opname van ${what}.
-                        ${addButtonHtml(kind, name, "+ Opname toevoegen")}`;
+                        ${addButtonHtml(kind, name, "+ Opname toevoegen", field)}`;
                 } else {
                     box.innerHTML = "";
                     box.dataset.key = "";
@@ -2218,8 +2255,115 @@
             });
         }
 
+        // De opname die bij 'Audio van het woord of de zin' getypt is.
+        function fieldAudioOwner() {
+            return state.tool === "dictee" ? dItem() : state.media;
+        }
+
+        function checkAudioField() {
+            const box = $("#m-audio-check");
+            if (!box) return;
+            const value = (fieldAudioOwner().audio || "").trim().replace(/\.mp3$/i, "");
+            const isLink = /^(https?:)?\/\//i.test(value) || /^\.{0,2}\//.test(value) || value.includes("/");
+            if (!value || value.toLowerCase() === "geen" || isLink) {
+                box.innerHTML = "";
+                box.dataset.key = "";
+                return;
+            }
+            if (isWordForAudio(value)) {
+                showSingleCheck(box, "woord", value.toLowerCase(), true);
+            } else if (sentenceFileName(value)) {
+                showSingleCheck(box, "zin", value, true);
+            } else {
+                box.innerHTML = "";
+                box.dataset.key = "";
+            }
+        }
+
+        // ---------- Afbeeldingen ----------
+
+        const IMAGE_TYPES = [".webp", ".jpg", ".png", ".jpeg"];
+        const imageStatus = new Map();
+
+        function imageCandidates(name) {
+            const file = encodeURIComponent(name);
+            const own = `${ROOT}${TOOLS[state.tool].repo}/assets/afbeeldingen/`;
+            return [IMAGE_BASE, own].flatMap((folder) => IMAGE_TYPES.map((type) => folder + file + type));
+        }
+
+        async function lookupImage(name) {
+            if (imageStatus.has(name)) return imageStatus.get(name);
+            let unknown = false;
+            for (const url of imageCandidates(name)) {
+                const found = await exists(url);
+                if (found) {
+                    const result = { state: "ja", url };
+                    imageStatus.set(name, result);
+                    return result;
+                }
+                if (found === null) unknown = true;
+            }
+            if (unknown) return { state: "onbekend" };
+            const result = { state: "nee" };
+            imageStatus.set(name, result);
+            return result;
+        }
+
+        function imageOwner() {
+            return state.tool === "dictee" ? dItem() : state.media;
+        }
+
+        // Voorstel voor de naam van een nieuwe afbeelding: het woord zelf.
+        function suggestedImageName() {
+            if (state.tool === "dictee") return dItem().word.trim().toLowerCase();
+            const text = state.sleep.text.replace(/[[\]]/g, "").trim();
+            return sentenceFileName(text);
+        }
+
+        function checkImageField() {
+            const box = $("#m-beeld-check");
+            if (!box) return;
+            const value = (imageOwner().beeld || "").trim().replace(/\.(webp|jpe?g|png)$/i, "");
+            const isLink = /^(https?:)?\/\//i.test(value) || /^\.{0,2}\//.test(value) || value.includes("/");
+            const addButton = (name, label) => uploadReady
+                ? `<button type="button" class="add-audio" data-add-image="${escapeHtml(name)}">${label}</button>`
+                : "";
+            if (isLink) {
+                box.innerHTML = "";
+                box.dataset.key = "";
+                return;
+            }
+            const key = `${value}|${uploadReady}|${value ? "" : suggestedImageName()}`;
+            if (box.dataset.key === key) return;
+            box.dataset.key = key;
+            if (!value) {
+                box.innerHTML = uploadReady ? addButton(suggestedImageName(), "+ Afbeelding toevoegen") : "";
+                return;
+            }
+            box.innerHTML = `<span class="busy">Afbeelding zoeken…</span>`;
+            lookupImage(value).then((result) => {
+                if (box.dataset.key !== key) return;
+                if (result.state === "ja") {
+                    box.innerHTML = `<span class="found">🖼 Afbeelding gevonden</span>
+                        <img class="thumb" src="${escapeHtml(result.url)}" alt="">`;
+                } else if (result.state === "nieuw") {
+                    box.innerHTML = `<span class="found">✓ Afbeelding toegevoegd.</span>
+                        <span class="hint" style="display:inline">Binnen enkele minuten verschijnt ze in de oefening.</span>
+                        ${result.preview ? `<img class="thumb" src="${result.preview}" alt="">` : ""}`;
+                } else if (result.state === "nee") {
+                    box.innerHTML = `<span class="missing">Niet gevonden:</span> nog geen afbeelding <b>${escapeHtml(value)}</b>.
+                        ${addButton(value, "+ Afbeelding toevoegen")}`;
+                } else {
+                    box.innerHTML = "";
+                    box.dataset.key = "";
+                }
+            });
+        }
+
         // Welke opnames horen bij wat er nu ingevuld is?
         function runAudioChecks() {
+            checkAudioField();
+            checkImageField();
             const tool = state.tool;
             if (tool === "dictee") {
                 const box = $("#d-word-audio");
@@ -2276,10 +2420,16 @@
                 playUrl(play.dataset.play);
                 return;
             }
+            const addImage = event.target.closest("[data-add-image]");
+            if (addImage) {
+                event.preventDefault();
+                openUpload("afbeelding", addImage.dataset.addImage);
+                return;
+            }
             const add = event.target.closest("[data-add-kind]");
             if (add) {
                 event.preventDefault();
-                openUpload(add.dataset.addKind, add.dataset.addName);
+                openUpload(add.dataset.addKind, add.dataset.addName, null, add.dataset.addField === "1");
             }
         });
 
@@ -2351,7 +2501,9 @@
         }
 
         function upCanSend() {
-            const nameOk = upload.kind !== "instructie" || Boolean(instructionFileName($("#up-name").value));
+            const nameOk = upload.kind === "instructie"
+                ? Boolean(instructionFileName($("#up-name").value))
+                : upload.kind === "afbeelding" ? Boolean(sentenceFileName($("#up-name").value)) : true;
             $("#up-send").disabled = !(upload.blob && nameOk && $("#up-code").value.trim()) || upload.isRecording;
         }
 
@@ -2364,15 +2516,27 @@
             return name;
         }
 
-        function openUpload(kind, name = "", onDone = null) {
+        function openUpload(kind, name = "", onDone = null, fromField = false) {
             if (!uploadReady) return;
-            Object.assign(upload, { kind, name, blob: null, onDone });
+            Object.assign(upload, { kind, name, blob: null, imageBytes: null, onDone, fromField });
             const dialog = $("#upload-dialog");
-            $("#up-title").textContent = kind === "instructie"
-                ? "Nieuwe instructie"
-                : kind === "zin" ? `Nieuwe opname: “${name}”` : `Nieuwe opname: ${name}`;
-            $("#up-name-box").classList.toggle("hidden", kind !== "instructie");
-            $("#up-name").value = kind === "instructie" ? name : "";
+            const image = kind === "afbeelding";
+            $("#up-title").textContent = image
+                ? "Nieuwe afbeelding"
+                : kind === "instructie"
+                    ? "Nieuwe instructie"
+                    : kind === "zin" ? `Nieuwe opname: “${name}”` : `Nieuwe opname: ${name}`;
+            $("#up-name-box").classList.toggle("hidden", kind !== "instructie" && !image);
+            $("#up-name-label").textContent = image ? "Naam van de afbeelding" : "Tekst van de instructie";
+            $("#up-name-hint").textContent = image
+                ? "Met deze naam kies je de afbeelding later in een oefening, bv. kat of rode-bal."
+                : "Dit wordt ook de naam in de lijst.";
+            $("#up-name").placeholder = image ? "bv. kat" : "bv. Zoek het woord";
+            $("#up-name").value = kind === "instructie" || image ? name : "";
+            $("#up-audio-box").classList.toggle("hidden", image);
+            $("#up-image-box").classList.toggle("hidden", !image);
+            $("#up-image-preview").classList.add("hidden");
+            $("#up-image-info").textContent = "Kies een afbeelding, of plak er een (Ctrl+V). Ze wordt automatisch verkleind.";
             $("#up-folder").classList.toggle("hidden", kind !== "woord");
             if (kind === "woord") {
                 const folder = isDictionaryWord(name) ? "woord" : "nonsens";
@@ -2389,7 +2553,7 @@
             upMessage("");
             upCanSend();
             dialog.showModal();
-            if (kind === "instructie") $("#up-name").focus();
+            if (kind === "instructie" || (image && !name)) $("#up-name").focus();
         }
 
         function closeUpload() {
@@ -2568,6 +2732,9 @@
             const code = $("#up-code").value.trim();
             let kind = upload.kind;
             let name = upload.name;
+            if (kind === "afbeelding") {
+                name = sentenceFileName($("#up-name").value);
+            }
             if (kind === "woord") {
                 kind = $("#upload-dialog").querySelector('input[name="up-folder"]:checked')?.value || "woord";
             }
@@ -2581,20 +2748,23 @@
                 }
             }
             $("#up-send").disabled = true;
-            upMessage("Even geduld: de opname wordt klaargemaakt…", true);
-
-            let mp3;
-            try {
-                mp3 = await toMp3(upload.blob);
-            } catch (error) {
-                upMessage(error.message === "stil"
-                    ? "Op de opname is niets te horen. Kijk de microfoon na en probeer opnieuw."
-                    : "Dit geluidsbestand kan niet gelezen worden. Probeer een mp3-bestand of neem opnieuw op.");
-                upCanSend();
-                return;
+            let bytes;
+            if (kind === "afbeelding") {
+                bytes = upload.imageBytes;
+            } else {
+                upMessage("Even geduld: de opname wordt klaargemaakt…", true);
+                try {
+                    bytes = await toMp3(upload.blob);
+                } catch (error) {
+                    upMessage(error.message === "stil"
+                        ? "Op de opname is niets te horen. Kijk de microfoon na en probeer opnieuw."
+                        : "Dit geluidsbestand kan niet gelezen worden. Probeer een mp3-bestand of neem opnieuw op.");
+                    upCanSend();
+                    return;
+                }
             }
-            if (mp3.length > 3 * 1024 * 1024) {
-                upMessage("De opname is te lang (max. 3 MB). Hou ze kort.");
+            if (!bytes || bytes.length > 3 * 1024 * 1024) {
+                upMessage("Het bestand is te groot (max. 3 MB).");
                 upCanSend();
                 return;
             }
@@ -2606,7 +2776,7 @@
                 response = await fetch(`${UPLOAD_URL}/upload`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ code, soort: kind, naam: name, mp3: toBase64(mp3) }),
+                    body: JSON.stringify({ code, soort: kind, naam: name, bestand: toBase64(bytes) }),
                 });
                 data = await response.json().catch(() => ({}));
             } catch {
@@ -2627,7 +2797,13 @@
             }
             if (response && response.status === 409) {
                 rememberCode(code);
-                upMessage("Deze opname bestaat al. Er is niets veranderd.");
+                upMessage(kind === "afbeelding"
+                    ? "Er bestaat al een afbeelding met die naam. Kies een andere naam, of gebruik de bestaande."
+                    : "Deze opname bestaat al. Er is niets veranderd.");
+                if (kind === "afbeelding") {
+                    upCanSend();
+                    return;
+                }
                 markFound(kind, name);
                 return;
             }
@@ -2656,9 +2832,22 @@
         }
 
         function finishUpload(kind, name, path) {
+            const preview = upload.imagePreview;
             closeUpload();
+            if (kind === "afbeelding") {
+                forgetFolder("assets", "afbeeldingen");
+                const stored = path.split("/").pop().replace(/\.(webp|jpe?g|png)$/i, "");
+                imageStatus.set(stored, { state: "nieuw", preview });
+                imageOwner().beeld = stored;
+                const input = $("#m-beeld");
+                if (input) input.value = stored;
+                save();
+                renderMedia();
+                update();
+                return;
+            }
             if (kind === "instructie") {
-                forgetFolder("audio", "instructies");
+                forgetFolder("assets", "audio/instructies");
                 const m = state.media;
                 m.instructie = name;
                 save();
@@ -2666,8 +2855,107 @@
                 update();
                 return;
             }
+            // Kwam de opname van het audioveld, dan komt daar de naam waaronder
+            // ze bewaard is (bv. 'De koffie!' wordt 'de-koffie').
+            if (upload.fromField && path) {
+                const stored = path.split("/").pop().replace(/\.mp3$/i, "");
+                const owner = fieldAudioOwner();
+                owner.audio = kind === "zin" ? stored : stored.replace(/_$/, "");
+                const input = $("#m-audio");
+                if (input) input.value = owner.audio;
+                if (kind === "zin") audioStatus.set(`zin|${owner.audio}`, { state: "nieuw" });
+                save();
+                update();
+            }
             markFound(kind, name);
         }
+
+        // ---------- Afbeelding verkleinen ----------
+        // Langste zijde max. 800 px, als WebP (veel kleiner dan jpg of png,
+        // doorzichtigheid blijft). Kan de browser geen WebP maken, dan jpg
+        // (of png bij een doorzichtige afbeelding).
+
+        const IMAGE_MAX = 800;
+
+        function canvasBlob(canvas, type, quality) {
+            return new Promise((resolve) => canvas.toBlob(resolve, type, quality));
+        }
+
+        async function shrinkImage(file) {
+            const bitmap = await createImageBitmap(file);
+            const factor = Math.min(1, IMAGE_MAX / Math.max(bitmap.width, bitmap.height));
+            const width = Math.max(1, Math.round(bitmap.width * factor));
+            const height = Math.max(1, Math.round(bitmap.height * factor));
+            const canvas = document.createElement("canvas");
+            canvas.width = width;
+            canvas.height = height;
+            const context = canvas.getContext("2d");
+            context.imageSmoothingQuality = "high";
+            context.drawImage(bitmap, 0, 0, width, height);
+            bitmap.close?.();
+            let blob = await canvasBlob(canvas, "image/webp", 0.82);
+            if (!blob || blob.type !== "image/webp") {
+                const pixels = context.getImageData(0, 0, width, height).data;
+                let transparent = false;
+                for (let i = 3; i < pixels.length; i += 4) {
+                    if (pixels[i] < 250) {
+                        transparent = true;
+                        break;
+                    }
+                }
+                blob = transparent
+                    ? await canvasBlob(canvas, "image/png")
+                    : await canvasBlob(canvas, "image/jpeg", 0.85);
+            }
+            // Was het origineel al klein genoeg, dan blijft het origineel.
+            if (factor === 1 && /^image\/(webp|jpeg|png)$/.test(file.type) && file.size <= blob.size) {
+                blob = file;
+            }
+            return { blob, width, height };
+        }
+
+        async function setUploadImage(file) {
+            if (!file || !/^image\//.test(file.type)) {
+                upMessage("Dit is geen afbeelding.");
+                return;
+            }
+            upMessage("");
+            $("#up-image-info").textContent = "Even geduld: de afbeelding wordt verkleind…";
+            try {
+                const { blob, width, height } = await shrinkImage(file);
+                upload.imageBytes = new Uint8Array(await blob.arrayBuffer());
+                upload.blob = blob;
+                upload.imagePreview = URL.createObjectURL(blob);
+                const preview = $("#up-image-preview");
+                preview.src = upload.imagePreview;
+                preview.classList.remove("hidden");
+                const kb = Math.max(1, Math.round(blob.size / 1024));
+                $("#up-image-info").textContent = `${width} × ${height} pixels, ${kb} kB.`;
+                if (!$("#up-name").value.trim() && file.name) {
+                    $("#up-name").value = sentenceFileName(file.name.replace(/\.[a-z0-9]+$/i, ""));
+                }
+            } catch {
+                upload.blob = null;
+                $("#up-image-info").textContent = "";
+                upMessage("Deze afbeelding kan niet gelezen worden. Probeer een jpg- of png-bestand.");
+            }
+            upCanSend();
+        }
+
+        $("#up-image-button").addEventListener("click", () => $("#up-image-file").click());
+        $("#up-image-file").addEventListener("change", (event) => {
+            const file = event.target.files[0];
+            event.target.value = "";
+            if (file) setUploadImage(file);
+        });
+        // Een gekopieerde afbeelding plakken (Ctrl+V).
+        document.addEventListener("paste", (event) => {
+            if (!$("#upload-dialog").open || upload.kind !== "afbeelding") return;
+            const item = [...(event.clipboardData?.items || [])].find((entry) => entry.type.startsWith("image/"));
+            if (!item) return;
+            event.preventDefault();
+            setUploadImage(item.getAsFile());
+        });
 
         $("#up-record").addEventListener("click", () => {
             if (upload.isRecording) stopRecording();
