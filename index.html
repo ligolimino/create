@@ -593,6 +593,8 @@
 
     <!-- Woordenlijst van het klik-klakboekje (zelfde bestand als de tool). -->
     <script src="../klikklak/wordlist-v1.js"></script>
+    <!-- Verwerking van nieuwe opnames (zelfde stappen als de Audacity-macro). -->
+    <script src="opname-verwerking.js"></script>
     <script>
     (() => {
         "use strict";
@@ -2431,42 +2433,10 @@
             return bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0;
         }
 
-        // Eén kanaal, stiltes vooraan en achteraan weg, en overal ongeveer
-        // even luid. Zo starten woorden in het boekje meteen.
-        function cleanSamples(samples, rate) {
-            let peak = 0;
-            for (let i = 0; i < samples.length; i += 1) peak = Math.max(peak, Math.abs(samples[i]));
-            if (peak < 0.003) return null; // Er is niets te horen.
-            const step = Math.max(1, Math.floor(rate * 0.01));
-            const threshold = Math.max(0.012, peak * 0.06);
-            const loud = (index) => {
-                let sum = 0;
-                const end = Math.min(samples.length, index + step);
-                for (let i = index; i < end; i += 1) sum += samples[i] * samples[i];
-                return Math.sqrt(sum / Math.max(1, end - index)) > threshold;
-            };
-            let start = 0;
-            while (start < samples.length && !loud(start)) start += step;
-            let end = samples.length;
-            while (end > start && !loud(Math.max(start, end - step))) end -= step;
-            const pad = Math.floor(rate * 0.08);
-            start = Math.max(0, start - pad);
-            end = Math.min(samples.length, end + Math.floor(rate * 0.15));
-            const cut = samples.slice(start, end);
-            const gain = Math.min(8, 0.89 / peak);
-            const fade = Math.min(Math.floor(rate * 0.01), Math.floor(cut.length / 2));
-            for (let i = 0; i < cut.length; i += 1) {
-                let value = cut[i] * gain;
-                if (i < fade) value *= i / fade;
-                if (i > cut.length - fade) value *= (cut.length - i) / fade;
-                cut[i] = value;
-            }
-            return cut;
-        }
-
         async function toMp3(blob) {
             const bytes = new Uint8Array(await blob.arrayBuffer());
-            // Een gekozen mp3 blijft zoals ze is.
+            // Een gekozen mp3 blijft zoals ze is (die is meestal al met de
+            // Audacity-macro verwerkt).
             if (!blob.isRecording && isMp3(bytes)) return bytes;
 
             const Context = window.AudioContext || window.webkitAudioContext;
@@ -2485,7 +2455,8 @@
             source.connect(offline.destination);
             source.start();
             const rendered = await offline.startRendering();
-            const samples = cleanSamples(rendered.getChannelData(0), targetRate);
+            // Dezelfde stappen als de Audacity-macro (zie opname-verwerking.js).
+            const samples = window.LetterlabAudio.process(rendered.getChannelData(0), targetRate);
             if (!samples) throw new Error("stil");
 
             await loadLame();
