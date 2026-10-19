@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Letterlab maken</title>
+    <title>Letterlab</title>
     <!--
         Letterlab — create
         Maakt links en Genially-insluitcodes voor het dictee, het
@@ -51,7 +51,7 @@
             margin: 0;
             background: var(--paper);
             color: var(--ink);
-            font-family: Andika, "Segoe UI", Arial, sans-serif;
+            font-family: Aptos, "Segoe UI", Arial, sans-serif;
             font-size: 17px;
             line-height: 1.4;
         }
@@ -164,7 +164,7 @@
             outline: none;
             border-color: var(--teal);
         }
-        .big-input { font-size: 1.5rem; letter-spacing: 0.02em; }
+        .big-input { font-size: 1rem; letter-spacing: 0.02em; }
 
         /* Segmentknoppen (bv. Letters / Cijfers) */
         .segment {
@@ -418,7 +418,7 @@
                 repeating-linear-gradient(45deg, #f6fafa 0 12px, #eef5f5 12px 24px);
             display: block;
         }
-        .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+        .row { display: flex; gap: 12px; align-items: end; flex-wrap: wrap; }
         .row label.field { margin: 0; }
         .height-field { width: 110px; }
         .hidden { display: none !important; }
@@ -428,7 +428,7 @@
 <body>
     <header>
         <div class="inner">
-            <h1>Letterlab maken</h1>
+            <h1>Letterlab</h1>
             <span>Klik je oefening bij elkaar en kopieer de link of de insluitcode.</span>
         </div>
     </header>
@@ -436,7 +436,7 @@
     <main class="layout">
         <section>
             <div class="card">
-                <h2><span class="step">1</span> Welke oefening?</h2>
+                <h2><span class="step">1</span> Wat wil je maken?</h2>
                 <div class="tools" role="group" aria-label="Soort oefening">
                     <button class="tool" data-tool="dictee"><span class="ico"></span>Dictee<small>woord typen</small></button>
                     <button class="tool" data-tool="klikklak"><span class="ico"></span>Klik-klak<small>boekje met flapjes</small></button>
@@ -460,10 +460,10 @@
             </div>
 
             <div class="card" id="view-card">
-                <h2><span class="step">3</span> Waar komt het?</h2>
+                <h2><span class="step">3</span> Hoe wil je de oefening gebruiken?</h2>
                 <div class="segment" role="group" aria-label="Weergave">
-                    <button data-view="klein">Genially (klein)</button>
-                    <button data-view="volledig">Volledig</button>
+                    <button data-view="klein">Ingesloten (Genially)</button>
+                    <button data-view="volledig">Vrijstaand</button>
                 </div>
                 <p class="hint" id="view-hint"></p>
                 <div id="media" class="hidden" style="margin-top:14px"></div>
@@ -491,7 +491,7 @@
                             <span>Hoogte (px)</span>
                             <input type="number" id="height" class="height-field" min="100" max="1200" step="10">
                         </label>
-                        <p class="hint" style="flex:1;margin:0">Zelfde hoogte als in de Excel-lijst. Pas aan als het insluitvak in Genially anders is.</p>
+                        <p class="hint" style="flex:1;margin:0">Geef de gewenste hoogte in van het insluitvak in Genially.</p>
                     </div>
                 </div>
             </div>
@@ -759,7 +759,7 @@
                     <button class="mini" data-d="none">Niets</button>
                 </div>
                 <div class="switches" style="margin-top:16px">
-                    ${switchHtml("d-voorbeeld", "Voorbeeldwoord tonen", "Het hele woord staat boven de vakjes.", d.voorbeeld)}
+                    ${switchHtml("d-voorbeeld", "Voorbeeldwoord tonen", "Toon het hele woord boven de vakjes.", d.voorbeeld)}
                 </div>
                 <div class="label" style="margin-top:16px">Toetsenbord</div>
                 <div class="segment" role="group" aria-label="Toetsenbord" id="d-keys">
@@ -875,8 +875,8 @@
                         <button class="mini" data-d="add">+ woord</button>
                     </div>
                     ${d.items.length > 1 ? `<div class="mini-actions">
-                        <button class="mini" data-d-move="${d.active}:-1" ${d.active === 0 ? "disabled" : ""}>← eerder</button>
-                        <button class="mini" data-d-move="${d.active}:1" ${d.active === d.items.length - 1 ? "disabled" : ""}>later →</button>
+                        <button class="mini" data-d-move="${d.active}:-1" ${d.active === 0 ? "disabled" : ""}>← naar voor</button>
+                        <button class="mini" data-d-move="${d.active}:1" ${d.active === d.items.length - 1 ? "disabled" : ""}>naar achter →</button>
                     </div>` : ""}
                     <p class="hint">${d.items.length > 1
                         ? "Na een juist antwoord verschijnt vanzelf het volgende woord. Tik een woord aan om het aan te passen."
@@ -888,7 +888,7 @@
                 hint.textContent = series
                     ? "Cijfers mogen ook (bv. 12)."
                     : d.items.length > 1
-                        ? `Genially (klein) toont één woord: het aangetikte woord. Kies bij stap 3 Volledig voor de hele reeks van ${d.items.length} woorden.`
+                        ? `Genially (klein) toont één woord: het aangetikte woord. Kies bij stap 3 'Vrijstaand' voor de hele reeks van ${d.items.length} woorden.`
                         : "Eén woord per oefening. Cijfers mogen ook (bv. 12).";
             }
             const wordLabel = $("#d-word-label");
@@ -1113,7 +1113,7 @@
                     ${active ? `
                         ${paletteHtml(position, "sound")}
                         <div class="chips" style="margin-top:10px">
-                            <button class="chip" data-sound="-" aria-pressed="${position.includes("-")}">leeg flapje</button>
+                            <button class="chip" data-sound="-" aria-pressed="${position.includes("-")}"> - </button>
                         </div>
                         <div class="add-row">
                             <input type="text" id="k-own" placeholder="Andere klank of cluster, bv. gr, ng" autocomplete="off" autocapitalize="off">
