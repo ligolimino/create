@@ -40,6 +40,11 @@
             --line: #c8dfe1;
             --good: #16805d;
             --warn: #a8551b;
+            --ligo-orange: #e06025;
+            --ligo-light-blue: #09b9bb;
+            --ligo-dark-blue: #056181;
+            --ligo-azure: #82ccb1;
+            --ligo-pink: #f6d2c0;
             --warn-soft: #fff1e3;
             --shadow: 0 8px 26px rgba(20, 67, 79, 0.10);
             --radius: 18px;
@@ -225,7 +230,7 @@
         }
         .switch input:checked + .knob { background: var(--teal); }
         .switch input:checked + .knob::after { left: 23px; }
-        .switch input:focus-visible + .knob { outline: 3px solid var(--pink); }
+        .switch input:focus-visible + .knob { outline: 3px solid var(--ligo-orange); }
         .switch small { display: block; color: var(--muted); font-size: 0.84rem; }
 
         /* Klanktegels (woord in stukjes) */
@@ -258,8 +263,8 @@
             color: var(--muted);
         }
         .tile[aria-pressed="true"] {
-            border-color: var(--pink);
-            background: var(--pink-soft);
+            border-color: var(--ligo-orange);
+            background: var(--ligo-pink);
             border-style: dashed;
         }
         .tiles .sep { font-size: 1.6rem; padding: 8px 2px; white-space: pre; }
@@ -290,8 +295,8 @@
             color: #fff;
         }
         .chip.answer {
-            background: var(--pink-soft);
-            border-color: var(--pink);
+            background: var(--ligo-pink);
+            border-color: var(--ligo-orange);
             cursor: default;
         }
         .chip.removable::after { content: " ×"; opacity: 0.6; }
@@ -309,7 +314,7 @@
             cursor: pointer;
             font: inherit;
         }
-        .d-remove:hover { color: var(--pink); }
+        .d-remove:hover { color: var(--ligo-orange); }
         .mini:disabled { opacity: 0.4; cursor: default; }
         .palette { margin-top: 12px; display: grid; gap: 10px; }
         .palette .cluster-group { display: none; }
@@ -347,7 +352,7 @@
             background: var(--teal-soft);
             color: var(--teal-dark);
         }
-        .btn.pink { background: var(--pink); }
+        .btn.pink { background: var(--ligo-orange); }
 
         /* Klik-klakposities */
         .positions { display: grid; gap: 10px; }
@@ -448,8 +453,8 @@
             font-size: 0.85rem;
         }
         .audio-check .add-audio {
-            border: 2px solid var(--pink);
-            background: var(--pink-soft);
+            border: 2px solid var(--ligo-orange);
+            background: var(--ligo-pink);
             color: #a3214f;
             border-radius: 999px;
             padding: 3px 12px;
@@ -459,7 +464,7 @@
         }
         .audio-check .chips { margin-top: 6px; }
         .audio-check .chip { font-size: 0.92rem; padding: 2px 10px; }
-        .audio-check .chip.no-audio { border-color: var(--pink); background: var(--pink-soft); }
+        .audio-check .chip.no-audio { border-color: var(--ligo-orange); background: var(--ligo-pink); }
         .audio-check span.chip { cursor: default; }
         .new-instruction { margin-top: 8px; }
         .audio-check .thumb {
