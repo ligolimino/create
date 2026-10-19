@@ -423,6 +423,59 @@
         .height-field { width: 110px; }
         .hidden { display: none !important; }
         a { color: var(--teal-dark); }
+
+        /* Opnames nakijken: gevonden / niet gevonden */
+        .audio-check { margin: -6px 0 14px; font-size: 0.92rem; min-height: 1.2em; }
+        .audio-check:empty { display: none; }
+        .audio-check .found { color: var(--good); font-weight: 700; }
+        .audio-check .missing { color: var(--warn); font-weight: 700; }
+        .audio-check .busy { color: var(--muted); }
+        .audio-check .play {
+            border: 0;
+            background: var(--teal-soft);
+            color: var(--teal-dark);
+            border-radius: 999px;
+            padding: 1px 9px;
+            margin-left: 6px;
+            font-size: 0.85rem;
+        }
+        .audio-check .add-audio {
+            border: 2px solid var(--pink);
+            background: var(--pink-soft);
+            color: #a3214f;
+            border-radius: 999px;
+            padding: 3px 12px;
+            margin-left: 6px;
+            font-weight: 700;
+            font-size: 0.88rem;
+        }
+        .audio-check .chips { margin-top: 6px; }
+        .audio-check .chip { font-size: 0.92rem; padding: 2px 10px; }
+        .audio-check .chip.no-audio { border-color: var(--pink); background: var(--pink-soft); }
+        .audio-check span.chip { cursor: default; }
+        .new-instruction { margin-top: 8px; }
+
+        /* Venster om een opname toe te voegen */
+        dialog.upload {
+            border: 0;
+            border-radius: var(--radius);
+            box-shadow: 0 20px 60px rgba(11, 74, 94, 0.25);
+            padding: 0;
+            width: min(480px, calc(100vw - 32px));
+            color: var(--ink);
+        }
+        dialog.upload::backdrop { background: rgba(11, 74, 94, 0.35); }
+        dialog.upload form { padding: 20px; }
+        dialog.upload h3 { margin: 0 0 12px; font-size: 1.2rem; }
+        .rec-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0 10px; }
+        .rec-row .btn { flex: 1; min-width: 140px; }
+        .btn.recording { background: #c62828; }
+        .rec-time { font-variant-numeric: tabular-nums; }
+        dialog.upload audio { width: 100%; margin: 4px 0 8px; }
+        .dialog-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; flex-wrap: wrap; }
+        .choice { display: grid; gap: 6px; margin-bottom: 12px; }
+        .choice label { display: flex; gap: 8px; align-items: flex-start; }
+        .choice input { margin-top: 4px; }
     </style>
 </head>
 <body>
@@ -503,6 +556,41 @@
         </aside>
     </main>
 
+    <!-- Venster om een nieuwe opname naar de audio-repository te sturen.
+         Het verschijnt alleen als de uploadverbinding werkt. -->
+    <dialog class="upload" id="upload-dialog">
+        <form method="dialog" id="upload-form">
+            <h3 id="up-title">Nieuwe opname</h3>
+            <label class="field hidden" id="up-name-box">
+                <span>Tekst van de instructie</span>
+                <input type="text" id="up-name" autocomplete="off" placeholder="bv. Zoek het woord">
+                <p class="hint">Dit wordt ook de naam in de lijst.</p>
+            </label>
+            <div class="choice hidden" id="up-folder">
+                <label><input type="radio" name="up-folder" value="woord"> <span><b>Bestaand woord</b></span></label>
+                <label><input type="radio" name="up-folder" value="nonsens"> <span><b>Nonsenswoord</b> <span class="hint" style="display:inline">(voor het klik-klakboekje)</span></span></label>
+            </div>
+            <div class="label">Opname</div>
+            <div class="rec-row">
+                <button type="button" class="btn" id="up-record">🎙 Opnemen</button>
+                <button type="button" class="btn light" id="up-file-button">📁 Bestand kiezen</button>
+                <input type="file" id="up-file" accept="audio/*,.mp3,.m4a,.wav" class="hidden">
+            </div>
+            <audio id="up-preview" controls class="hidden"></audio>
+            <p class="hint" id="up-audio-hint">Neem op met de microfoon, of kies een geluidsbestand (mp3, m4a of wav).</p>
+            <label class="field" id="up-code-box" style="margin-top:12px">
+                <span>Teamcode</span>
+                <input type="text" id="up-code" autocomplete="off" autocapitalize="off" spellcheck="false">
+                <p class="hint">Je hoeft de code maar één keer te typen: deze computer onthoudt ze.</p>
+            </label>
+            <div id="up-message"></div>
+            <div class="dialog-actions">
+                <button type="button" class="btn light" id="up-cancel">Annuleren</button>
+                <button type="button" class="btn pink" id="up-send" disabled>Toevoegen</button>
+            </div>
+        </form>
+    </dialog>
+
     <!-- Woordenlijst van het klik-klakboekje (zelfde bestand als de tool). -->
     <script src="../klikklak/wordlist-v1.js"></script>
     <script>
@@ -577,8 +665,15 @@
         ];
 
         // Instructie-opnames die zeker bestaan, voor als GitHub de lijst
-        // even niet doorgeeft. (Map assets/audio/instructies/.)
+        // even niet doorgeeft. (Map instructies/ van de audio-repository,
+        // en de oude mappen assets/audio/instructies/.)
         const KNOWN_INSTRUCTIONS = {
+            audio: [
+                "Maak de zin af", "Maak de zin", "Maak het woord af",
+                "Maak het woord. Zet de letters op de juiste plaats",
+                "Maak het woord", "Schrijf de letter", "Typ de letter",
+                "Typ het woord", "schrijf het woord",
+            ],
             dictee: [
                 "Maak de zin af", "Maak de zin", "Maak het woord af",
                 "Maak het woord. Zet de letters op de juiste plaats",
@@ -595,6 +690,20 @@
         };
 
         const STORAGE_KEY = "letterlab-create-v1";
+
+        // ------------------------------------------------------------
+        // OPNAMES TOEVOEGEN
+        // Het adres van de uploadverbinding (Cloudflare Worker). Leeg =
+        // geen knoppen om opnames toe te voegen. Werkt de verbinding niet,
+        // dan verschijnen de knoppen ook niet. Zie audio/upload/HANDLEIDING.md.
+        const UPLOAD_URL = "";
+        // ------------------------------------------------------------
+
+        // Alle opnames staan centraal in de repository 'audio'. De oude
+        // mappen worden nog nagekeken voor opnames die er alleen daar staan.
+        const AUDIO_BASE = `${ROOT}audio/`;
+        const OLD_WORD_AUDIO = `${ROOT}klikklak/assets/audio/woorden/`;
+        const OLD_SENTENCE_AUDIO = `${ROOT}sleepoefening/assets/audio/oefeningen/`;
 
         // ============================================================
         // 2. TOESTAND (wordt in deze browser onthouden)
@@ -752,6 +861,7 @@
                         autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="bv. kraan">
                     <p class="hint" id="d-word-hint"></p>
                 </label>
+                <div class="audio-check" id="d-word-audio"></div>
                 <div class="label">Tik aan wat de cursist zelf typt</div>
                 <div class="tiles" id="d-tiles"></div>
                 <div class="mini-actions">
@@ -977,6 +1087,7 @@
                     <button class="btn light" data-k="add-position">+ positie</button>
                 </div>
                 <div id="k-words" style="margin-top:18px"></div>
+                <div class="audio-check" id="k-words-audio" style="margin-top:8px"></div>
                 <div class="label" style="margin-top:18px">Onder het boekje</div>
                 <div class="segment" role="group" aria-label="Onder het boekje" id="k-onder">
                     ${BELOW_CHOICES.map((choice) => `<button data-onder="${choice.value}">${choice.label}</button>`).join("")}
@@ -1320,6 +1431,7 @@
                         autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="bv. kraan of Ik drink koffie.">
                     <p class="hint">Typ gewoon het woord of de zin. Liever zelf haakjes typen, zoals in Excel? Dat mag ook: <b>ka[t]</b>.</p>
                 </label>
+                <div class="audio-check" id="s-text-audio"></div>
                 <div id="s-mode-box" class="hidden" style="margin-bottom:12px">
                     <div class="label">Vakjes voor</div>
                     <div class="segment" role="group" aria-label="Vakjes voor" id="s-mode">
@@ -1534,6 +1646,7 @@
                         autocomplete="off" autocapitalize="off" spellcheck="false">
                     <p class="hint">Gescheiden door komma's.</p>
                 </label>
+                <div class="audio-check" id="f-woorden-audio"></div>
 
                 <div class="label" style="margin-top:16px">Hoeveel tegelijk?</div>
                 <div class="segment" role="group" aria-label="Hoeveel tegelijk" id="f-samen">
@@ -1683,20 +1796,34 @@
             }
         }
 
+        // Na een upload: de lijst opnieuw bij GitHub opvragen.
+        function forgetFolder(repo, folder) {
+            const key = `${repo}/${folder}`;
+            delete folderCache[key];
+            try {
+                sessionStorage.removeItem(`create-${key}`);
+            } catch {
+                // Niet erg.
+            }
+        }
+
         function withoutExtension(name) {
             return name.replace(/\.(mp3|m4a|wav|jpg|jpeg|png|webp)$/i, "");
         }
 
-        // Alle instructie-opnames uit de drie repo's. Een opname uit een
-        // andere repo krijgt een relatieve link (../dictee/...), die alle
-        // tools begrijpen omdat ze op hetzelfde adres staan.
+        // Alle instructie-opnames: eerst die van de centrale audio-
+        // repository (alle tools zoeken daar eerst), daarna die van de oude
+        // mappen. Een opname die alleen in een andere tool staat, krijgt een
+        // relatieve link (../dictee/...), die alle tools begrijpen omdat ze
+        // op hetzelfde adres staan.
         async function instructionOptions(tool) {
             const ownRepo = TOOLS[tool].repo;
-            const repos = [ownRepo, ...["dictee", "sleepoefening", "klikklak"].filter((r) => r !== ownRepo)];
+            const repos = ["audio", ownRepo, ...["dictee", "sleepoefening", "klikklak"].filter((r) => r !== ownRepo)];
             const options = [];
             const seen = new Set();
             for (const repo of repos) {
-                const files = await listFolder(repo, "assets/audio/instructies");
+                const folder = repo === "audio" ? "instructies" : "assets/audio/instructies";
+                const files = await listFolder(repo, folder);
                 const names = files
                     ? files.filter((name) => /\.(mp3|m4a|wav)$/i.test(name))
                     : KNOWN_INSTRUCTIONS[repo].map((name) => `${name}.mp3`);
@@ -1704,7 +1831,7 @@
                     const label = withoutExtension(file);
                     if (seen.has(label.toLowerCase())) return;
                     seen.add(label.toLowerCase());
-                    const value = repo === ownRepo
+                    const value = repo === ownRepo || repo === "audio"
                         ? label
                         : `../${repo}/assets/audio/instructies/${file}`;
                     options.push({ label, value, repo });
@@ -1717,7 +1844,7 @@
             return `<label class="field">
                     <span>Audio van het woord of de zin</span>
                     <input type="text" id="m-audio" value="${escapeHtml(m.audio)}"
-                        placeholder="Leeg = opname van het klik-klakboekje zoeken" autocomplete="off">
+                        placeholder="Leeg = opname van het woord of de zin zelf zoeken" autocomplete="off">
                     <p class="hint">Bestandsnaam zonder .mp3. Bij een zin nodig voor de luisterknoppen. Typ <b>geen</b> voor geen luisterknop.</p>
                 </label>`;
         }
@@ -1753,8 +1880,11 @@
                     <select id="m-instructie-select"><option>Even laden…</option></select>
                     <input type="text" id="m-instructie" class="hidden" style="margin-top:8px"
                         value="${escapeHtml(m.instructie)}" placeholder="Bestandsnaam zonder .mp3" autocomplete="off">
-                    <p class="hint">Nieuwe opname? Zet ze op GitHub in <b>assets/audio/instructies/</b> en open deze pagina opnieuw.</p>
+                    ${uploadReady ? "" : `<p class="hint">Nieuwe opname? Zet ze op GitHub in de repository <b>audio</b>, map <b>instructies/</b>, en open deze pagina opnieuw.</p>`}
                 </label>
+                ${uploadReady ? `<div class="new-instruction" style="margin:-6px 0 14px">
+                    <button type="button" class="mini" id="m-instructie-new">+ Nieuwe instructie toevoegen</button>
+                </div>` : ""}
                 ${withImage ? `
                 <p class="hint hidden" id="m-word-note"></p>
                 <label class="field">
@@ -1779,12 +1909,14 @@
             });
             syncDictationMedia();
 
+            $("#m-instructie-new")?.addEventListener("click", () => openUpload("instructie"));
+
             const select = $("#m-instructie-select");
             const options = await instructionOptions(tool);
             if (state.tool !== tool || !document.body.contains(select)) return;
             const known = options.some((option) => option.value === m.instructie);
             select.innerHTML = `<option value="">(geen instructie)</option>`
-                + options.map((option) => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}${option.repo !== TOOLS[tool].repo ? ` (uit ${option.repo})` : ""}</option>`).join("")
+                + options.map((option) => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}${option.repo !== TOOLS[tool].repo && option.repo !== "audio" ? ` (uit ${option.repo})` : ""}</option>`).join("")
                 + `<option value="__eigen__">Andere naam typen…</option>`;
             select.value = !m.instructie ? "" : known ? m.instructie : "__eigen__";
             $("#m-instructie").classList.toggle("hidden", select.value !== "__eigen__");
@@ -1826,6 +1958,698 @@
         }
 
         // ============================================================
+        // 7b. OPNAMES NAKIJKEN EN TOEVOEGEN
+        // ------------------------------------------------------------
+        // Bij elk woord (of zin) kijkt de pagina of er al een opname
+        // bestaat in de audio-repository. Bestaat ze niet, dan staat er
+        // 'Niet gevonden'. Alleen als de uploadverbinding (Cloudflare)
+        // werkt, verschijnt er ook een knop om een opname toe te voegen.
+        // ============================================================
+
+        let uploadReady = false;
+
+        // Namen die Windows niet toelaat ('nul' wordt 'nul_').
+        const RESERVED_NAMES = ["con", "prn", "aux", "nul"];
+        function audioFileName(name) {
+            return RESERVED_NAMES.includes(name) ? `${name}_` : name;
+        }
+
+        // Dezelfde bestandsnaam als de sleepoefening zoekt en de Worker
+        // bewaart: 'De koffie is heet!' wordt 'de-koffie-is-heet'.
+        function sentenceFileName(text) {
+            return text
+                .toLowerCase()
+                .replace(/[.?!,;:]+$/, "")
+                .replace(/[^a-z0-9à-ÿ\s-]/g, "")
+                .trim()
+                .replace(/\s+/g, "-");
+        }
+
+        function isWordForAudio(word) {
+            return /^[a-zà-ÿ]{1,40}$/.test(word);
+        }
+
+        function isDictionaryWord(word) {
+            const list = window.LETTERLAB_WORDLISTS?.v1;
+            return Boolean(list && list.includes(word));
+        }
+
+        function audioCandidates(kind, name) {
+            const path = (value) => value.split("/").map(encodeURIComponent).join("/");
+            if (kind === "zin") {
+                const sentence = name.trim().replace(/[.?!,;:]+$/, "");
+                const plain = sentence.toLowerCase().replace(/[^a-z0-9à-ÿ\s-]/g, "").trim();
+                const names = [...new Set([
+                    plain.replace(/\s+/g, "-"),
+                    sentence,
+                    sentence.toLowerCase(),
+                    plain.replace(/\s+/g, "_"),
+                ])];
+                return [`${AUDIO_BASE}zinnen/`, OLD_SENTENCE_AUDIO].flatMap((folder) =>
+                    names.map((file) => folder + path(`${file}.mp3`)));
+            }
+            const file = path(`${audioFileName(name)}.mp3`);
+            const first = encodeURIComponent(name.charAt(0));
+            return [`${AUDIO_BASE}woorden/`, OLD_WORD_AUDIO].flatMap((root) => [
+                `${root}${first}/${file}`,
+                `${root}nonsens/${file}`,
+            ]);
+        }
+
+        // Resultaten: "kind|naam" → { state: "ja" | "nee" | "nieuw", url }
+        const audioStatus = new Map();
+        const audioLookups = new Map();
+
+        // Bestaat dit adres? true / false, of null als het niet na te
+        // kijken is (bv. geen internet).
+        async function exists(url) {
+            try {
+                const response = await fetch(url, { method: "HEAD", cache: "no-cache" });
+                if (response.ok) return true;
+                return response.status === 404 ? false : null;
+            } catch {
+                return null;
+            }
+        }
+
+        function lookupAudio(kind, name) {
+            const key = `${kind}|${name}`;
+            if (audioStatus.has(key)) return Promise.resolve(audioStatus.get(key));
+            if (audioLookups.has(key)) return audioLookups.get(key);
+            const lookup = (async () => {
+                let unknown = false;
+                for (const url of audioCandidates(kind, name)) {
+                    const found = await exists(url);
+                    if (found) {
+                        const result = { state: "ja", url };
+                        audioStatus.set(key, result);
+                        return result;
+                    }
+                    if (found === null) unknown = true;
+                }
+                // Niet na te kijken: niets tonen en later opnieuw proberen.
+                if (unknown) return { state: "onbekend" };
+                const result = { state: "nee" };
+                audioStatus.set(key, result);
+                return result;
+            })();
+            audioLookups.set(key, lookup);
+            lookup.finally(() => audioLookups.delete(key));
+            return lookup;
+        }
+
+        // Kijkt meerdere opnames na, maar niet allemaal tegelijk.
+        async function lookupMany(entries, onEach) {
+            let next = 0;
+            const worker = async () => {
+                while (next < entries.length) {
+                    const entry = entries[next];
+                    next += 1;
+                    onEach(entry, await lookupAudio(entry.kind, entry.name));
+                }
+            };
+            await Promise.all(Array.from({ length: Math.min(6, entries.length) }, worker));
+        }
+
+        let playingAudio = null;
+        function playUrl(url) {
+            if (playingAudio) playingAudio.pause();
+            playingAudio = new Audio(url);
+            playingAudio.play().catch(() => {});
+        }
+
+        function addButtonHtml(kind, name, label) {
+            if (!uploadReady) return "";
+            return `<button type="button" class="add-audio" data-add-kind="${escapeHtml(kind)}"
+                data-add-name="${escapeHtml(name)}">${label}</button>`;
+        }
+
+        // Eén woord of zin: één regel onder het invulvak.
+        function showSingleCheck(box, kind, name) {
+            const key = `${kind}|${name}|${uploadReady}`;
+            if (box.dataset.key === key) return;
+            box.dataset.key = key;
+            const what = kind === "zin" ? "deze zin" : `<b>${escapeHtml(name)}</b>`;
+            box.innerHTML = `<span class="busy">Opname zoeken…</span>`;
+            lookupAudio(kind, name).then((result) => {
+                if (box.dataset.key !== key) return;
+                if (result.state === "ja") {
+                    box.innerHTML = `<span class="found">🔊 Opname gevonden</span>
+                        <button type="button" class="play" data-play="${escapeHtml(result.url)}" aria-label="Opname beluisteren">▶</button>`;
+                } else if (result.state === "nieuw") {
+                    box.innerHTML = `<span class="found">✓ Opname toegevoegd.</span>
+                        <span class="hint" style="display:inline">Binnen enkele minuten werkt ze in de oefeningen.</span>`;
+                } else if (result.state === "nee") {
+                    box.innerHTML = `<span class="missing">Niet gevonden:</span> nog geen opname van ${what}.
+                        ${addButtonHtml(kind, name, "+ Opname toevoegen")}`;
+                } else {
+                    box.innerHTML = "";
+                    box.dataset.key = "";
+                }
+            });
+        }
+
+        // Een lijst woorden (flitser, klik-klak): een samenvatting met de
+        // woorden die nog geen opname hebben.
+        function showListCheck(box, words) {
+            const key = `${words.join(",")}|${uploadReady}`;
+            if (box.dataset.key === key) return;
+            box.dataset.key = key;
+            if (!words.length) {
+                box.innerHTML = "";
+                return;
+            }
+            box.innerHTML = `<span class="busy">Opnames zoeken…</span>`;
+            const results = new Map();
+            lookupMany(words.map((name) => ({ kind: "woord", name })), (entry, result) => {
+                results.set(entry.name, result.state);
+            }).then(() => {
+                if (box.dataset.key !== key) return;
+                if ([...results.values()].includes("onbekend")) {
+                    box.innerHTML = "";
+                    box.dataset.key = "";
+                    return;
+                }
+                const missing = words.filter((word) => results.get(word) === "nee");
+                const fresh = words.filter((word) => results.get(word) === "nieuw");
+                if (!missing.length) {
+                    box.innerHTML = `<span class="found">🔊 Alle ${words.length} woorden hebben een opname.</span>`
+                        + (fresh.length ? ` <span class="hint" style="display:inline">(${fresh.length} net toegevoegd)</span>` : "");
+                    return;
+                }
+                box.innerHTML = `<span class="missing">Niet gevonden:</span> ${missing.length} van de ${words.length}
+                    woorden ${missing.length === 1 ? "heeft" : "hebben"} nog geen opname.
+                    ${uploadReady ? `<span class="hint" style="display:inline">Tik een woord aan om een opname toe te voegen.</span>` : ""}
+                    <div class="chips">${missing.map((word) => uploadReady
+                        ? `<button type="button" class="chip no-audio" data-add-kind="woord" data-add-name="${escapeHtml(word)}">+ ${escapeHtml(word)}</button>`
+                        : `<span class="chip no-audio">${escapeHtml(word)}</span>`).join("")}</div>`;
+            });
+        }
+
+        // Welke opnames horen bij wat er nu ingevuld is?
+        function runAudioChecks() {
+            const tool = state.tool;
+            if (tool === "dictee") {
+                const box = $("#d-word-audio");
+                if (!box) return;
+                const item = dItem();
+                const word = item.word.trim().toLowerCase();
+                if (item.audio || !isWordForAudio(word)) {
+                    box.innerHTML = "";
+                    box.dataset.key = "";
+                } else {
+                    showSingleCheck(box, "woord", word);
+                }
+            } else if (tool === "sleep") {
+                const box = $("#s-text-audio");
+                if (!box) return;
+                const text = state.sleep.text.replace(/[[\]]/g, "").trim();
+                const sentence = /\s/.test(text);
+                const word = text.toLowerCase();
+                if (state.media.audio || !text || (!sentence && !isWordForAudio(word)) || (sentence && !sentenceFileName(text))) {
+                    box.innerHTML = "";
+                    box.dataset.key = "";
+                } else {
+                    showSingleCheck(box, sentence ? "zin" : "woord", sentence ? text : word);
+                }
+            } else if (tool === "flitser") {
+                const box = $("#f-woorden-audio");
+                if (!box) return;
+                const words = state.flitser.soort === "woorden"
+                    ? unique(flashItems().map((word) => word.toLowerCase()).filter(isWordForAudio))
+                    : [];
+                showListCheck(box, words);
+            } else if (tool === "klikklak") {
+                const box = $("#k-words-audio");
+                if (!box) return;
+                const k = state.klikklak;
+                const words = k.woorden ? (bookWords() || []).filter((word) => !k.uit.includes(word)) : [];
+                showListCheck(box, words.slice(0, 300));
+            }
+        }
+
+        let audioCheckTimer = null;
+        function refreshAudioChecks() {
+            clearTimeout(audioCheckTimer);
+            audioCheckTimer = setTimeout(runAudioChecks, 350);
+        }
+
+        // Klikken op ▶ of op een 'toevoegen'-knop, waar die ook staat.
+        document.addEventListener("click", (event) => {
+            const play = event.target.closest("[data-play]");
+            if (play) {
+                event.preventDefault();
+                playUrl(play.dataset.play);
+                return;
+            }
+            const add = event.target.closest("[data-add-kind]");
+            if (add) {
+                event.preventDefault();
+                openUpload(add.dataset.addKind, add.dataset.addName);
+            }
+        });
+
+        // ---------- Werkt de uploadverbinding? ----------
+
+        async function checkUploader() {
+            let ready = false;
+            if (UPLOAD_URL) {
+                try {
+                    const controller = new AbortController();
+                    const timer = setTimeout(() => controller.abort(), 8000);
+                    const response = await fetch(`${UPLOAD_URL}/status`, { cache: "no-store", signal: controller.signal });
+                    clearTimeout(timer);
+                    const data = await response.json();
+                    ready = response.ok && data.ok === true;
+                } catch {
+                    ready = false;
+                }
+            }
+            if (ready !== uploadReady) {
+                uploadReady = ready;
+                runAudioChecks();
+                renderMedia();
+            }
+        }
+
+        // ---------- Het venster om een opname toe te voegen ----------
+
+        const CODE_KEY = "letterlab-teamcode";
+        const upload = {
+            kind: "",
+            name: "",
+            blob: null,
+            isRecording: false,
+            recorder: null,
+            stream: null,
+            timer: null,
+            onDone: null,
+        };
+
+        function readCode() {
+            try {
+                return localStorage.getItem(CODE_KEY) || "";
+            } catch {
+                return "";
+            }
+        }
+
+        function rememberCode(code) {
+            try {
+                localStorage.setItem(CODE_KEY, code);
+            } catch {
+                // Niet erg: dan vraagt het venster de code de volgende keer opnieuw.
+            }
+        }
+
+        function forgetCode() {
+            try {
+                localStorage.removeItem(CODE_KEY);
+            } catch {
+                // Niet erg.
+            }
+        }
+
+        function upMessage(text, ok = false) {
+            $("#up-message").innerHTML = text
+                ? `<div class="message${ok ? " ok" : ""}">${text}</div>`
+                : "";
+        }
+
+        function upCanSend() {
+            const nameOk = upload.kind !== "instructie" || Boolean(instructionFileName($("#up-name").value));
+            $("#up-send").disabled = !(upload.blob && nameOk && $("#up-code").value.trim()) || upload.isRecording;
+        }
+
+        // Dezelfde regels als de Worker: geen tekens die Windows weigert.
+        function instructionFileName(raw) {
+            const name = String(raw || "").normalize("NFC").trim()
+                .replace(/\.mp3$/i, "").replace(/\s+/g, " ").replace(/[ .]+$/, "");
+            if (!name || name.length > 80 || name.startsWith(".")) return "";
+            if (/[\\/:*?"<>|\u0000-\u001f]/.test(name)) return "";
+            return name;
+        }
+
+        function openUpload(kind, name = "", onDone = null) {
+            if (!uploadReady) return;
+            Object.assign(upload, { kind, name, blob: null, onDone });
+            const dialog = $("#upload-dialog");
+            $("#up-title").textContent = kind === "instructie"
+                ? "Nieuwe instructie"
+                : kind === "zin" ? `Nieuwe opname: “${name}”` : `Nieuwe opname: ${name}`;
+            $("#up-name-box").classList.toggle("hidden", kind !== "instructie");
+            $("#up-name").value = kind === "instructie" ? name : "";
+            $("#up-folder").classList.toggle("hidden", kind !== "woord");
+            if (kind === "woord") {
+                const folder = isDictionaryWord(name) ? "woord" : "nonsens";
+                dialog.querySelectorAll('input[name="up-folder"]').forEach((radio) => {
+                    radio.checked = radio.value === folder;
+                });
+            }
+            $("#up-code").value = readCode();
+            $("#up-preview").classList.add("hidden");
+            $("#up-preview").removeAttribute("src");
+            $("#up-audio-hint").textContent = "Neem op met de microfoon, of kies een geluidsbestand (mp3, m4a of wav).";
+            $("#up-record").textContent = "🎙 Opnemen";
+            $("#up-record").classList.remove("recording");
+            upMessage("");
+            upCanSend();
+            dialog.showModal();
+            if (kind === "instructie") $("#up-name").focus();
+        }
+
+        function closeUpload() {
+            stopRecording(true);
+            const dialog = $("#upload-dialog");
+            if (dialog.open) dialog.close();
+        }
+
+        function setUploadAudio(blob, label) {
+            upload.blob = blob;
+            const preview = $("#up-preview");
+            if (preview.src) URL.revokeObjectURL(preview.src);
+            preview.src = URL.createObjectURL(blob);
+            preview.classList.remove("hidden");
+            $("#up-audio-hint").textContent = label;
+            upCanSend();
+        }
+
+        function pickMimeType() {
+            if (!window.MediaRecorder?.isTypeSupported) return "";
+            return ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"]
+                .find((type) => MediaRecorder.isTypeSupported(type)) || "";
+        }
+
+        async function startRecording() {
+            if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+                upMessage("Opnemen lukt niet in deze browser. Kies een bestand.");
+                return;
+            }
+            try {
+                upload.stream = await navigator.mediaDevices.getUserMedia({
+                    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false },
+                });
+            } catch {
+                upMessage("De microfoon mag niet gebruikt worden. Geef toestemming in de browser, of kies een bestand.");
+                return;
+            }
+            const mimeType = pickMimeType();
+            const chunks = [];
+            const recorder = mimeType
+                ? new MediaRecorder(upload.stream, { mimeType })
+                : new MediaRecorder(upload.stream);
+            upload.recorder = recorder;
+            recorder.addEventListener("dataavailable", (event) => {
+                if (event.data.size) chunks.push(event.data);
+            });
+            recorder.addEventListener("stop", () => {
+                upload.stream?.getTracks().forEach((track) => track.stop());
+                upload.stream = null;
+                if (upload.cancelled || !chunks.length) return;
+                const blob = new Blob(chunks, { type: recorder.mimeType || chunks[0].type });
+                blob.isRecording = true;
+                setUploadAudio(blob, "Beluister je opname. Niet goed? Neem gewoon opnieuw op.");
+            });
+            upload.cancelled = false;
+            recorder.start();
+            upload.isRecording = true;
+            upMessage("");
+            const started = Date.now();
+            const button = $("#up-record");
+            button.classList.add("recording");
+            const tick = () => {
+                const seconds = Math.floor((Date.now() - started) / 1000);
+                button.innerHTML = `⏹ Stoppen <span class="rec-time">0:${String(seconds).padStart(2, "0")}</span>`;
+                // Een woord of instructie is kort: na 30 seconden stoppen we vanzelf.
+                if (seconds >= 30) stopRecording();
+            };
+            tick();
+            upload.timer = setInterval(tick, 250);
+            upCanSend();
+        }
+
+        function stopRecording(cancel = false) {
+            clearInterval(upload.timer);
+            upload.timer = null;
+            if (upload.recorder && upload.recorder.state !== "inactive") {
+                upload.cancelled = cancel;
+                upload.recorder.stop();
+            } else {
+                upload.stream?.getTracks().forEach((track) => track.stop());
+                upload.stream = null;
+            }
+            upload.recorder = null;
+            upload.isRecording = false;
+            const button = $("#up-record");
+            button.classList.remove("recording");
+            button.textContent = upload.blob || !cancel ? "🎙 Opnieuw opnemen" : "🎙 Opnemen";
+            upCanSend();
+        }
+
+        // ---------- Van opname naar mp3 ----------
+
+        let lamePromise = null;
+        function loadLame() {
+            if (window.lamejs) return Promise.resolve();
+            if (!lamePromise) {
+                lamePromise = new Promise((resolve, reject) => {
+                    const script = document.createElement("script");
+                    script.src = "lame.min.js";
+                    script.onload = resolve;
+                    script.onerror = () => {
+                        lamePromise = null;
+                        reject(new Error("lame"));
+                    };
+                    document.head.appendChild(script);
+                });
+            }
+            return lamePromise;
+        }
+
+        function isMp3(bytes) {
+            if (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) return true;
+            return bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0;
+        }
+
+        // Eén kanaal, stiltes vooraan en achteraan weg, en overal ongeveer
+        // even luid. Zo starten woorden in het boekje meteen.
+        function cleanSamples(samples, rate) {
+            let peak = 0;
+            for (let i = 0; i < samples.length; i += 1) peak = Math.max(peak, Math.abs(samples[i]));
+            if (peak < 0.003) return null; // Er is niets te horen.
+            const step = Math.max(1, Math.floor(rate * 0.01));
+            const threshold = Math.max(0.012, peak * 0.06);
+            const loud = (index) => {
+                let sum = 0;
+                const end = Math.min(samples.length, index + step);
+                for (let i = index; i < end; i += 1) sum += samples[i] * samples[i];
+                return Math.sqrt(sum / Math.max(1, end - index)) > threshold;
+            };
+            let start = 0;
+            while (start < samples.length && !loud(start)) start += step;
+            let end = samples.length;
+            while (end > start && !loud(Math.max(start, end - step))) end -= step;
+            const pad = Math.floor(rate * 0.08);
+            start = Math.max(0, start - pad);
+            end = Math.min(samples.length, end + Math.floor(rate * 0.15));
+            const cut = samples.slice(start, end);
+            const gain = Math.min(8, 0.89 / peak);
+            const fade = Math.min(Math.floor(rate * 0.01), Math.floor(cut.length / 2));
+            for (let i = 0; i < cut.length; i += 1) {
+                let value = cut[i] * gain;
+                if (i < fade) value *= i / fade;
+                if (i > cut.length - fade) value *= (cut.length - i) / fade;
+                cut[i] = value;
+            }
+            return cut;
+        }
+
+        async function toMp3(blob) {
+            const bytes = new Uint8Array(await blob.arrayBuffer());
+            // Een gekozen mp3 blijft zoals ze is.
+            if (!blob.isRecording && isMp3(bytes)) return bytes;
+
+            const Context = window.AudioContext || window.webkitAudioContext;
+            const context = new Context();
+            let decoded;
+            try {
+                decoded = await context.decodeAudioData(bytes.buffer.slice(0));
+            } finally {
+                context.close?.();
+            }
+            const targetRate = 44100;
+            const length = Math.ceil(decoded.duration * targetRate);
+            const offline = new OfflineAudioContext(1, Math.max(1, length), targetRate);
+            const source = offline.createBufferSource();
+            source.buffer = decoded;
+            source.connect(offline.destination);
+            source.start();
+            const rendered = await offline.startRendering();
+            const samples = cleanSamples(rendered.getChannelData(0), targetRate);
+            if (!samples) throw new Error("stil");
+
+            await loadLame();
+            const encoder = new window.lamejs.Mp3Encoder(1, targetRate, 96);
+            const ints = new Int16Array(samples.length);
+            for (let i = 0; i < samples.length; i += 1) {
+                const value = Math.max(-1, Math.min(1, samples[i]));
+                ints[i] = value < 0 ? value * 0x8000 : value * 0x7fff;
+            }
+            const parts = [];
+            for (let i = 0; i < ints.length; i += 1152) {
+                const chunk = encoder.encodeBuffer(ints.subarray(i, i + 1152));
+                if (chunk.length) parts.push(new Uint8Array(chunk));
+            }
+            const last = encoder.flush();
+            if (last.length) parts.push(new Uint8Array(last));
+            const out = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
+            let offset = 0;
+            parts.forEach((part) => {
+                out.set(part, offset);
+                offset += part.length;
+            });
+            return out;
+        }
+
+        function toBase64(bytes) {
+            let binary = "";
+            for (let i = 0; i < bytes.length; i += 0x8000) {
+                binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+            }
+            return btoa(binary);
+        }
+
+        // ---------- Versturen ----------
+
+        async function sendUpload() {
+            const code = $("#up-code").value.trim();
+            let kind = upload.kind;
+            let name = upload.name;
+            if (kind === "woord") {
+                kind = $("#upload-dialog").querySelector('input[name="up-folder"]:checked')?.value || "woord";
+            }
+            if (kind === "instructie") {
+                name = instructionFileName($("#up-name").value);
+                const taken = (await instructionOptions(state.tool))
+                    .some((option) => option.label.toLowerCase() === name.toLowerCase());
+                if (taken) {
+                    upMessage("Er bestaat al een instructie met die naam. Kies ze in de lijst, of geef een andere naam.");
+                    return;
+                }
+            }
+            $("#up-send").disabled = true;
+            upMessage("Even geduld: de opname wordt klaargemaakt…", true);
+
+            let mp3;
+            try {
+                mp3 = await toMp3(upload.blob);
+            } catch (error) {
+                upMessage(error.message === "stil"
+                    ? "Op de opname is niets te horen. Kijk de microfoon na en probeer opnieuw."
+                    : "Dit geluidsbestand kan niet gelezen worden. Probeer een mp3-bestand of neem opnieuw op.");
+                upCanSend();
+                return;
+            }
+            if (mp3.length > 3 * 1024 * 1024) {
+                upMessage("De opname is te lang (max. 3 MB). Hou ze kort.");
+                upCanSend();
+                return;
+            }
+
+            upMessage("Bezig met versturen…", true);
+            let response;
+            let data = {};
+            try {
+                response = await fetch(`${UPLOAD_URL}/upload`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ code, soort: kind, naam: name, mp3: toBase64(mp3) }),
+                });
+                data = await response.json().catch(() => ({}));
+            } catch {
+                response = null;
+            }
+
+            if (response && response.ok && data.ok) {
+                rememberCode(code);
+                finishUpload(kind, name, data.pad);
+                return;
+            }
+            if (response && response.status === 403) {
+                forgetCode();
+                upMessage("Die teamcode klopt niet.");
+                $("#up-code").focus();
+                upCanSend();
+                return;
+            }
+            if (response && response.status === 409) {
+                rememberCode(code);
+                upMessage("Deze opname bestaat al. Er is niets veranderd.");
+                markFound(kind, name);
+                return;
+            }
+            if (response && response.status === 400) {
+                upMessage(escapeHtml(data.fout || "Dit kan niet worden toegevoegd."));
+                upCanSend();
+                return;
+            }
+            // De verbinding zelf werkt niet meer: dan verdwijnen de
+            // uploadknoppen, zodat niemand verder in de war raakt.
+            upMessage("Toevoegen lukt nu niet. Er is niets veranderd.");
+            await checkUploader();
+            if (!uploadReady) setTimeout(closeUpload, 2500);
+            else upCanSend();
+        }
+
+        function markFound(kind, name) {
+            if (kind === "nonsens") kind = "woord";
+            if (kind === "woord" || kind === "zin") {
+                audioStatus.set(`${kind}|${name}`, { state: "nieuw" });
+            }
+            document.querySelectorAll(".audio-check").forEach((box) => {
+                box.dataset.key = "";
+            });
+            runAudioChecks();
+        }
+
+        function finishUpload(kind, name, path) {
+            closeUpload();
+            if (kind === "instructie") {
+                forgetFolder("audio", "instructies");
+                const m = state.media;
+                m.instructie = name;
+                save();
+                renderMedia();
+                update();
+                return;
+            }
+            markFound(kind, name);
+        }
+
+        $("#up-record").addEventListener("click", () => {
+            if (upload.isRecording) stopRecording();
+            else startRecording();
+        });
+        $("#up-file-button").addEventListener("click", () => $("#up-file").click());
+        $("#up-file").addEventListener("change", (event) => {
+            const file = event.target.files[0];
+            event.target.value = "";
+            if (!file) return;
+            if (file.size > 20 * 1024 * 1024) {
+                upMessage("Dit bestand is te groot.");
+                return;
+            }
+            upMessage("");
+            setUploadAudio(file, `Gekozen: ${file.name}`);
+        });
+        $("#up-name").addEventListener("input", upCanSend);
+        $("#up-code").addEventListener("input", upCanSend);
+        $("#up-cancel").addEventListener("click", closeUpload);
+        $("#up-send").addEventListener("click", sendUpload);
+        $("#upload-dialog").addEventListener("cancel", () => stopRecording(true));
+
+
+        // ============================================================
         // 8. RESULTAAT: link, insluitcode en voorbeeld
         // ============================================================
 
@@ -1862,6 +2686,7 @@
 
         function update() {
             save();
+            refreshAudioChecks();
             const result = build();
             const problem = $("#problem");
             const output = $("#output");
@@ -2162,6 +2987,7 @@
         });
 
         renderTool();
+        checkUploader();
     })();
     </script>
 </body>
