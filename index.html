@@ -312,6 +312,9 @@
         .d-remove:hover { color: var(--pink); }
         .mini:disabled { opacity: 0.4; cursor: default; }
         .palette { margin-top: 12px; display: grid; gap: 10px; }
+        .palette .cluster-group { display: none; }
+        body.show-clusters .palette .cluster-group { display: block; }
+        .palette .cluster-switch { padding: 6px 10px; }
         .palette .group-label {
             font-size: 0.8rem;
             text-transform: uppercase;
@@ -661,13 +664,18 @@
             },
             {
                 label: "Clusters vooraan",
+                cluster: true,
                 items: ["st", "sl", "sm", "sn", "sp", "kl", "kn", "kr", "br",
-                    "dr", "gr", "pr", "tr", "vr", "spr", "str"],
+                    "dr", "gr", "pr", "tr", "vr", "spr", "str",
+                    "bl", "fl", "gl", "pl", "fr", "kw", "tw", "dw", "zw", "wr", "schr"],
             },
             {
                 label: "Clusters achteraan",
+                cluster: true,
                 items: ["ft", "nt", "rt", "st", "ts", "ls", "ms", "ps", "rs",
-                    "chts", "lft", "rkt", "rst"],
+                    "chts", "lft", "rkt", "rst",
+                    "mp", "nd", "ld", "lk", "lf", "lm", "lp", "rk", "rm", "rp",
+                    "rf", "rg", "rd", "rn", "ns", "nst", "cht"],
             },
         ];
 
@@ -1198,15 +1206,49 @@
             update();
         }
 
+        // Clusters zijn eerder uitzondering dan regel: ze verschijnen pas
+        // als 'Clusters tonen' aan staat (deze browser onthoudt dat).
+        const CLUSTERS_KEY = "letterlab-create-clusters";
+        function clustersShown() {
+            try {
+                return localStorage.getItem(CLUSTERS_KEY) === "ja";
+            } catch {
+                return document.body.classList.contains("show-clusters");
+            }
+        }
+        document.body.classList.toggle("show-clusters", clustersShown());
+        document.addEventListener("change", (event) => {
+            if (!event.target.matches("[data-clusters-toggle]")) return;
+            const on = event.target.checked;
+            try {
+                localStorage.setItem(CLUSTERS_KEY, on ? "ja" : "nee");
+            } catch {
+                // Niet erg: dan geldt het alleen tot de pagina sluit.
+            }
+            document.body.classList.toggle("show-clusters", on);
+            document.querySelectorAll("[data-clusters-toggle]").forEach((box) => {
+                box.checked = on;
+            });
+        });
+
         function paletteHtml(selected, attribute) {
-            return `<div class="palette">${SOUND_GROUPS.map((group) => `
-                <div>
+            const toggle = `<label class="switch cluster-switch">
+                <input type="checkbox" data-clusters-toggle ${document.body.classList.contains("show-clusters") ? "checked" : ""}>
+                <span class="knob"></span>
+                <span>Clusters tonen<small>bv. kl, str, mp, nd</small></span>
+            </label>`;
+            const groupHtml = (group) => `
+                <div${group.cluster ? ` class="cluster-group"` : ""}>
                     <div class="group-label">${group.label}</div>
                     <div class="chips">${group.items.map((sound) => `<button class="chip"
                         data-${attribute}="${escapeHtml(sound)}"
                         aria-pressed="${selected.includes(sound)}">${escapeHtml(sound)}</button>`).join("")}
                     </div>
-                </div>`).join("")}
+                </div>`;
+            return `<div class="palette">
+                ${SOUND_GROUPS.filter((group) => !group.cluster).map(groupHtml).join("")}
+                ${toggle}
+                ${SOUND_GROUPS.filter((group) => group.cluster).map(groupHtml).join("")}
             </div>`;
         }
 
