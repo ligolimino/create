@@ -183,6 +183,9 @@
             border-right: 1px solid var(--line);
         }
         .segment button:last-child { border-right: 0; }
+        /* Lopen de knoppen over twee rijen, dan scheidt een lijn de rijen.
+           (De lijn onder de onderste rij valt weg achter de rand.) */
+        .segment button { box-shadow: 0 1px 0 var(--line); }
         .segment button[aria-pressed="true"] {
             background: var(--teal);
             color: #fff;
@@ -370,6 +373,8 @@
             background: var(--paper);
         }
         .wordlist .chip { font-size: 0.95rem; padding: 2px 10px; }
+        .wordlist .chip.combo { cursor: default; }
+        .wordlist .chip.combo.real { font-weight: 700; border-color: var(--teal); }
         .wordlist .chip.off {
             text-decoration: line-through;
             opacity: 0.5;
@@ -1272,6 +1277,22 @@
             return search(0, 0);
         }
 
+        // Alle woorden die het boekje kan vormen (ook nonsenswoorden),
+        // zonder dubbels. Een lege flap ("-") telt mee als 'niets'.
+        const COMBINATION_LIMIT = 600;
+        function allCombinations() {
+            let words = [""];
+            for (const group of clickBookGroups()) {
+                const next = [];
+                for (const start of words) {
+                    for (const part of group) next.push(start + part);
+                    if (next.length > 5000) break;
+                }
+                words = next;
+            }
+            return unique(words.filter(Boolean));
+        }
+
         function bookWords() {
             const list = window.LETTERLAB_WORDLISTS?.v1;
             const groups = clickBookGroups();
@@ -1293,9 +1314,16 @@
                 return;
             }
             if (!k.woorden) {
-                const total = groups.reduce((product, group) => product * group.length, 1);
-                box.innerHTML = `<div class="label">Woorden</div>
-                    <p class="hint">Alle ${total} combinaties kunnen verschijnen, ook nonsenswoorden.</p>`;
+                const combos = allCombinations();
+                const shown = combos.slice(0, COMBINATION_LIMIT);
+                const real = combos.filter(isDictionaryWord).length;
+                box.innerHTML = `<div class="label">Alle combinaties: ${combos.length}</div>
+                    <p class="hint" style="margin:-2px 0 8px">Ook nonsenswoorden kunnen verschijnen.
+                        <b>Vet</b> = bestaand woord (${real}).</p>
+                    <div class="wordlist"><div class="chips">
+                        ${shown.map((word) => `<span class="chip combo${isDictionaryWord(word) ? " real" : ""}">${escapeHtml(word)}</span>`).join("")}
+                    </div></div>
+                    ${combos.length > shown.length ? `<p class="hint">De eerste ${shown.length} van ${combos.length} combinaties.</p>` : ""}`;
                 return;
             }
             const words = bookWords();
@@ -2185,8 +2213,10 @@
                 const box = $("#k-words-audio");
                 if (!box) return;
                 const k = state.klikklak;
-                const words = k.woorden ? (bookWords() || []).filter((word) => !k.uit.includes(word)) : [];
-                showListCheck(box, words.slice(0, 300));
+                const words = k.woorden
+                    ? (bookWords() || []).filter((word) => !k.uit.includes(word))
+                    : clickBookGroups().length >= 2 ? allCombinations() : [];
+                showListCheck(box, words.filter(isWordForAudio).slice(0, 300));
             }
         }
 
