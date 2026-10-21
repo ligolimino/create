@@ -1537,7 +1537,7 @@
                     <span>Woord of zin</span>
                     <input type="text" id="s-text" class="big-input" value="${escapeHtml(s.text)}"
                         autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="bv. kraan of Ik drink koffie.">
-                    <p class="hint">Typ gewoon het woord of de zin. Liever zelf haakjes typen, zoals in Excel? Dat mag ook: <b>ka[t]</b>.</p>
+                    <p class="hint">Typ het woord of de zin en kies de kaartjes hieronder</b>.</p>
                 </label>
                 <div class="audio-check" id="s-text-audio"></div>
                 <div id="s-mode-box" class="hidden" style="margin-bottom:12px">
@@ -1547,29 +1547,29 @@
                         <button data-mode="letters">Letters</button>
                     </div>
                 </div>
-                <div class="label" id="s-tiles-label">Tik aan wat een vakje wordt</div>
+                <div class="label" id="s-tiles-label">Welke letters wil je weglaten?</div>
                 <div class="tiles" id="s-tiles"></div>
                 <div class="mini-actions" id="s-tile-actions">
                     <button class="mini" data-s="all">Alles</button>
                     <button class="mini" data-s="none">Niets</button>
                 </div>
 
-                <div class="label" style="margin-top:18px">Kaartjes</div>
-                <p class="hint" style="margin:-2px 0 8px">Roze = juist antwoord (komt er altijd bij). Tik een extra kaartje aan om het weg te halen.</p>
+                <div class="label" style="margin-top:18px">Keuzeletters of - woorden:</div>
+                <p class="hint" style="margin:-2px 0 8px">(De oranje kaartjes zijn het juiste antwoord en verschijnen altijd als optie.)</p>
                 <div class="chips" id="s-cards"></div>
-                <div class="mini-actions"><button class="mini" data-s="shuffle">🔀 Andere volgorde</button></div>
-                <div id="s-palette"></div>
-                <div class="add-row">
-                    <input type="text" id="s-own" placeholder="Extra kaartjes, gescheiden door komma's" autocomplete="off" autocapitalize="off">
+                <div class="mini-actions"><button class="mini" data-s="shuffle">Andere volgorde</button></div>
+                    <div class="add-row">
+                    <input type="text" id="s-own" placeholder="Typ klanken, gescheiden door komma's" autocomplete="off" autocapitalize="off">
                     <button class="btn light" data-s="own">Toevoegen</button>
+                    <div id="s-palette"></div>
                 </div>
 
                 <div class="switches" style="margin-top:18px">
                     ${switchHtml("s-mix", "Kaartjes door elkaar", "Elke keer een andere volgorde.", s.mix)}
-                    ${switchHtml("s-weg", "Gebruikt kaartje verdwijnt", "Uit als hetzelfde kaartje twee keer nodig is, bv. [k]i[k].", s.weg)}
+                    ${switchHtml("s-weg", "Gebruikt kaartje verdwijnt uit de keuzerij", "Uit als hetzelfde kaartje twee keer nodig is, bv. [k]i[k].", s.weg)}
                     ${switchHtml("s-klank", "Luisterknop boven elk vakje", "De klank die in het vakje moet.", s.klank)}
-                    ${switchHtml("s-woord", "Afspeelknop onder het woord", "Tijdens de oefening het hele woord of de zin beluisteren.", s.woord)}
-                    ${switchHtml("s-luister", "Luisterknop na juist antwoord", "Het hele woord nog eens horen.", s.luister)}
+                    ${switchHtml("s-woord", "Audioknop onder het woord", "Verschijnt enkel als het audiofragment beschikbaar is.", s.woord)}
+                    ${switchHtml("s-luister", "Luisterknop na juist antwoord", "Verschijnt enkel als het audiofragment beschikbaar is.", s.luister)}
                 </div>`;
 
             $("#s-text").addEventListener("input", (event) => {
@@ -1684,7 +1684,7 @@
             // Klankknoppen alleen bij letters; bij woorden typ je zelf.
             const showPalette = !(sentence && sleepMode() === "woorden") && !raw;
             $("#s-palette").innerHTML = showPalette
-                ? `<details style="margin-top:10px"><summary class="hint" style="cursor:pointer">Klanken aanklikken als extra kaartje</summary>
+                ? `<details style="margin-top:10px"><summary class="hint" style="cursor:pointer">Of selecteer hier extra klanken</summary>
                     ${paletteHtml(s.order, "card")}</details>`
                 : "";
             // Een geopende klankenlijst open houden na het aanklikken.
@@ -2214,7 +2214,7 @@
                     box.innerHTML = `<span class="found">✓ Opname toegevoegd.</span>
                         <span class="hint" style="display:inline">Binnen enkele minuten werkt ze in de oefeningen.</span>`;
                 } else if (result.state === "nee") {
-                    box.innerHTML = `<span class="missing">Niet gevonden:</span> nog geen opname van ${what}.
+                    box.innerHTML = `<span class="missing">Audio niet gevonden:</span> nog geen opname van ${what}.
                         ${addButtonHtml(kind, name, "+ Opname toevoegen", field)}`;
                 } else {
                     box.innerHTML = "";
@@ -3257,7 +3257,7 @@
                 klein: {
                     dictee: "Alleen het woord, de vakjes en het toetsenbord. Afbeelding en audio zet je in Genially zelf.",
                     klikklak: "Alleen het boekje met de klank- en woordknoppen, met een doorzichtige achtergrond.",
-                    sleep: "Alleen het woord of de zin en de kaartjes, met een doorzichtige achtergrond.",
+                    sleep: "Alleen het woord (of de zin) en de kaartjes, met een doorzichtige achtergrond.",
                 },
                 volledig: {
                     dictee: "Met instructie-audio, luisterknop en afbeelding. Om los te gebruiken. Hier kun je ook meerdere woorden na elkaar zetten.",
