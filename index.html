@@ -774,6 +774,7 @@
                 sleep: {
                     text: "", mode: "letters", gaps: [], extras: [], order: [],
                     mix: true, weg: true, klank: false, woord: false, luister: false,
+                    elkwoord: false,
                 },
                 flitser: {
                     soort: "klanken", items: [], woorden: "", samen: 1,
@@ -1466,7 +1467,7 @@
                 const [, before, core, after] = match;
                 if (before) tokens.push({ type: "sep", text: before });
                 if (core) {
-                    if (mode === "woorden") {
+                    if (mode === "woorden" || mode === "getallen") {
                         tokens.push({ type: "unit", text: core });
                     } else {
                         graphemes(core).forEach((part) => {
@@ -1494,6 +1495,15 @@
 
         function sleepMode() {
             return sleepIsSentence() ? state.sleep.mode : "letters";
+        }
+
+        // Bestaat de tekst alleen uit getallen, bv. "51 52 53"?
+        function sleepIsNumberRow(text) {
+            return /^\d+(\s+\d+)+$/.test(text.replace(/[[\]]/g, "").trim());
+        }
+
+        function sleepIsNumbers() {
+            return sleepMode() === "getallen";
         }
 
         // Geeft de oefening (met haakjes) en de juiste antwoorden.
@@ -1534,10 +1544,10 @@
             const s = state.sleep;
             $("#form").innerHTML = `
                 <label class="field">
-                    <span>Woord of zin</span>
+                    <span>Woord, zin of getallen</span>
                     <input type="text" id="s-text" class="big-input" value="${escapeHtml(s.text)}"
-                        autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="bv. kraan of Ik drink koffie.">
-                    <p class="hint">Typ het woord of de zin en kies de kaartjes hieronder</b>.</p>
+                        autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="bv. kraan, Ik drink koffie. of 51 52 53">
+                    <p class="hint">Typ het woord, de zin of de getallenreeks en kies de kaartjes hieronder.</p>
                 </label>
                 <div class="audio-check" id="s-text-audio"></div>
                 <div id="s-mode-box" class="hidden" style="margin-bottom:12px">
@@ -1545,7 +1555,9 @@
                     <div class="segment" role="group" aria-label="Vakjes voor" id="s-mode">
                         <button data-mode="woorden">Woorden</button>
                         <button data-mode="letters">Letters</button>
+                        <button data-mode="getallen">Getallen</button>
                     </div>
+                    <p class="hint" id="s-mode-hint"></p>
                 </div>
                 <div class="label" id="s-tiles-label">Welke letters wil je weglaten?</div>
                 <div class="tiles" id="s-tiles"></div>
@@ -1568,19 +1580,29 @@
                     ${switchHtml("s-mix", "Kaartjes door elkaar", "Elke keer een andere volgorde.", s.mix)}
                     ${switchHtml("s-weg", "Gebruikt kaartje verdwijnt uit de keuzerij", "Uit als hetzelfde kaartje twee keer nodig is, bv. [k]i[k].", s.weg)}
                     ${switchHtml("s-klank", "Luisterknop boven elk vakje", "De klank die in het vakje moet.", s.klank)}
-                    ${switchHtml("s-woord", "Audioknop onder het woord", "Verschijnt enkel als het audiofragment beschikbaar is.", s.woord)}
-                    ${switchHtml("s-luister", "Luisterknop na juist antwoord", "Verschijnt enkel als het audiofragment beschikbaar is.", s.luister)}
+                    <div id="s-elkwoord-box">${switchHtml("s-elkwoord", "Luisterknop boven elk woord", "Ook boven de woorden die er al staan. Verschijnt enkel als de opname bestaat.", s.elkwoord)}</div>
+                    <div id="s-woord-box">${switchHtml("s-woord", "Audioknop onder het woord", "Verschijnt enkel als het audiofragment beschikbaar is.", s.woord)}</div>
+                    <div id="s-luister-box">${switchHtml("s-luister", "Luisterknop na juist antwoord", "Verschijnt enkel als het audiofragment beschikbaar is.", s.luister)}</div>
                 </div>`;
 
             $("#s-text").addEventListener("input", (event) => {
                 const oldTokens = sleepTokens(s.text.trim(), sleepMode()).filter((t) => t.type === "unit").map((t) => t.text).join("|");
+                const wasNumbers = sleepIsNumberRow(s.text);
                 s.text = event.target.value;
+                // Typ je een reeks getallen, dan staat 'Getallen' vanzelf aan.
+                if (!wasNumbers && sleepIsNumberRow(s.text) && s.mode !== "getallen") {
+                    s.mode = "getallen";
+                    s.elkwoord = true;
+                    $("#s-elkwoord").checked = true;
+                } else if (wasNumbers && !sleepIsNumberRow(s.text) && s.mode === "getallen") {
+                    s.mode = "woorden";
+                }
                 const newTokens = sleepTokens(s.text.trim(), sleepMode()).filter((t) => t.type === "unit").map((t) => t.text).join("|");
                 if (oldTokens !== newTokens) s.gaps = [];
                 refreshSleep();
                 update();
             });
-            ["mix", "weg", "klank", "woord", "luister"].forEach((key) => {
+            ["mix", "weg", "klank", "woord", "luister", "elkwoord"].forEach((key) => {
                 $(`#s-${key}`).addEventListener("change", (event) => {
                     s[key] = event.target.checked;
                     update();
@@ -1621,6 +1643,11 @@
                 if (data.mode !== s.mode) {
                     s.mode = data.mode;
                     s.gaps = [];
+                    // Bij getallen horen standaard luisterknoppen boven elk getal.
+                    if (data.mode === "getallen") {
+                        s.elkwoord = true;
+                        $("#s-elkwoord").checked = true;
+                    }
                 }
             } else if (data.s === "all") {
                 s.gaps = units.map((unit) => unit.index);
@@ -1654,6 +1681,29 @@
                 button.setAttribute("aria-pressed", String(button.dataset.mode === s.mode));
             });
             $("#s-tiles-label").classList.toggle("hidden", raw);
+            const numbers = sleepIsNumbers();
+            $("#s-tiles-label").textContent = numbers
+                ? "Welke getallen wil je weglaten?"
+                : sentence && sleepMode() === "woorden"
+                    ? "Welke woorden wil je weglaten?"
+                    : "Welke letters wil je weglaten?";
+            $("#s-own").placeholder = numbers
+                ? "Typ getallen, gescheiden door komma's"
+                : "Typ klanken, gescheiden door komma's";
+            $("#s-mode-hint").textContent = numbers
+                ? "Elk getal komt in een eigen wit vakje. De opnames komen uit de map getallen (0 tot 100)."
+                : "";
+            // Luisterknop boven elk woord: alleen bij een zin of getallen.
+            $("#s-elkwoord-box").classList.toggle("hidden", !sentence);
+            const elkTitle = $("#s-elkwoord-box .switch > span:last-child");
+            if (elkTitle && elkTitle.firstChild) {
+                elkTitle.firstChild.textContent = numbers
+                    ? "Luisterknop boven elk getal"
+                    : "Luisterknop boven elk woord";
+            }
+            // Audio van de hele reeks bestaat niet bij getallen.
+            $("#s-woord-box").classList.toggle("hidden", numbers);
+            $("#s-luister-box").classList.toggle("hidden", numbers);
             $("#s-tile-actions").classList.toggle("hidden", raw);
 
             if (raw) {
@@ -1682,7 +1732,7 @@
                 : `<span class="hint">Nog geen kaartjes.</span>`;
 
             // Klankknoppen alleen bij letters; bij woorden typ je zelf.
-            const showPalette = !(sentence && sleepMode() === "woorden") && !raw;
+            const showPalette = !(sentence && ["woorden", "getallen"].includes(sleepMode())) && !raw;
             $("#s-palette").innerHTML = showPalette
                 ? `<details style="margin-top:10px"><summary class="hint" style="cursor:pointer">Of selecteer hier extra klanken</summary>
                     ${paletteHtml(s.order, "card")}</details>`
@@ -1708,9 +1758,12 @@
             let url = `${TOOLS.sleep.base}?oef=${enc(oef)}&keuzes=${s.order.map(enc).join(",")}`;
             if (s.mix) url += "&mix=ja";
             if (s.weg) url += "&weg=ja";
+            const numbers = sleepIsNumbers();
+            if (numbers) url += "&soort=getal";
             if (s.klank) url += "&klank=ja";
-            if (s.woord) url += "&woord=ja";
-            if (s.luister) url += "&luister=ja";
+            if (s.elkwoord && sleepIsSentence()) url += "&elkwoord=ja";
+            if (s.woord && !numbers) url += "&woord=ja";
+            if (s.luister && !numbers) url += "&luister=ja";
             return { url, warning };
         }
 
@@ -2387,7 +2440,7 @@
                 const text = state.sleep.text.replace(/[[\]]/g, "").trim();
                 const sentence = /\s/.test(text);
                 const word = text.toLowerCase();
-                if (state.media.audio || !text || (!sentence && !isWordForAudio(word)) || (sentence && !sentenceFileName(text))) {
+                if (state.media.audio || !text || sleepIsNumbers() || (!sentence && !isWordForAudio(word)) || (sentence && !sentenceFileName(text))) {
                     box.innerHTML = "";
                     box.dataset.key = "";
                 } else {
@@ -3083,7 +3136,7 @@
         // Zoekt bij een sleepoefening uit Excel (met haakjes) welke
         // stukjes aangetikt moeten worden. Lukt dat niet, dan blijven de
         // haakjes gewoon staan.
-        function sleepFromBrackets(oef) {
+        function sleepFromBrackets(oef, preferNumbers) {
             const plain = oef.replace(/\[|\]/g, "");
             const ranges = [];
             let offset = 0;
@@ -3097,6 +3150,7 @@
                 return match;
             });
             const modes = /\s/.test(plain.trim()) ? ["woorden", "letters"] : ["letters"];
+            if (preferNumbers && /\s/.test(plain.trim())) modes.unshift("getallen");
             for (const mode of modes) {
                 const tokens = sleepTokens(plain, mode);
                 let at = 0;
@@ -3189,8 +3243,8 @@
                 const oef = get("oef");
                 if (!oef) return "In deze sleeplink staat geen oefening (oef=).";
                 state.tool = "sleep";
-                const parsed = sleepFromBrackets(oef);
                 const yes = (name) => ["ja", "j", "yes", "1", "true", "waar"].includes(get(name).toLowerCase());
+                const parsed = sleepFromBrackets(oef, ["getal", "getallen"].includes(get("soort").toLowerCase()));
                 const keuzes = splitList(get("keuzes"));
                 state.sleep = Object.assign(fresh.sleep, parsed, {
                     order: [],
@@ -3200,6 +3254,7 @@
                     klank: yes("klank"),
                     woord: yes("woord"),
                     luister: yes("luister"),
+                    elkwoord: yes("elkwoord"),
                 });
                 const { answers } = sleepExercise();
                 state.sleep.extras = unique(keuzes.filter((card) => !answers.includes(card)));
