@@ -234,6 +234,7 @@
         .switch small { display: block; color: var(--muted); font-size: 0.84rem; }
 
         /* Klanktegels (woord in stukjes) */
+        .tiles .tile.new-word { margin-left: 18px; }
         .tiles {
             display: flex;
             flex-wrap: wrap;
@@ -886,9 +887,20 @@
             return out;
         }
 
-        // Precies wat het dictee met het woord uit de link doet.
+        // Precies wat het dictee met het woord uit de link doet. Bij een
+        // korte zin elk woord apart.
         function dictationGraphemes(word) {
-            return graphemes(word.toLowerCase().trim().replace(/[^a-zà-ÿ0-9]/g, ""));
+            return dictationWords(word).flat();
+        }
+        function dictationWords(word) {
+            return word.toLowerCase().trim().split(/\s+/)
+                .map((part) => graphemes(part.replace(/[^a-zà-ÿ0-9]/g, "")))
+                .filter((parts) => parts.length);
+        }
+        // Zoals het in de link komt: kleine letters, geen leestekens, één
+        // spatie tussen de woorden.
+        function dictationText(word) {
+            return dictationWords(word).map((parts) => parts.join("")).join(" ");
         }
 
         function switchHtml(id, title, help, checked) {
@@ -1072,15 +1084,21 @@
                     ? "Cijfers mogen ook (bv. 12)."
                     : d.items.length > 1
                         ? `Genially (klein) toont één woord: het aangetikte woord. Kies bij stap 3 'Vrijstaand' voor de hele reeks van ${d.items.length} woorden.`
-                        : "Eén woord per oefening. Cijfers mogen ook (bv. 12).";
+                        : "Eén woord of een korte zin per oefening. Cijfers mogen ook (bv. 12).";
             }
             const wordLabel = $("#d-word-label");
             if (wordLabel) {
-                wordLabel.textContent = series && d.items.length > 1 ? `Woord ${d.active + 1}` : "Woord";
+                wordLabel.textContent = series && d.items.length > 1 ? `Woord ${d.active + 1}` : "Woord of korte zin";
             }
 
+            // Bij een zin staat er wat ruimte tussen de woorden.
+            const firstOfWord = new Set();
+            dictationWords(item.word).reduce((at, word) => {
+                firstOfWord.add(at);
+                return at + word.length;
+            }, 0);
             $("#d-tiles").innerHTML = parts.length
-                ? parts.map((part, index) => `<button class="tile" data-tile="${index}"
+                ? parts.map((part, index) => `<button class="tile${index > 0 && firstOfWord.has(index) ? " new-word" : ""}" data-tile="${index}"
                     aria-pressed="${item.missing.includes(index)}">${escapeHtml(part)}<span class="nr">${index + 1}</span></button>`).join("")
                 : `<span class="empty">Typ eerst een woord.</span>`;
             document.querySelectorAll("#d-keys button").forEach((button) => {
@@ -1105,9 +1123,6 @@
                 if (!parts.length) {
                     return { problem: many ? `${which}typ een woord, of haal het weg met ×.` : "Typ een woord." };
                 }
-                if (/\s/.test(item.word.trim())) {
-                    return { problem: `${which}het dictee werkt met één woord. Haal de spatie weg.` };
-                }
                 if (!item.missing.length) {
                     return { problem: `${which}tik minstens één stukje aan dat de cursist moet typen.` };
                 }
@@ -1121,7 +1136,10 @@
             } else if (hasLetter && d.toetsen === "cijfers") {
                 warning = "Er moeten letters getypt worden: kies ‘Letters’ of ‘Letters + cijfers’.";
             }
-            const words = items.map((item) => enc(dictationGraphemes(item.word).join(""))).join("|");
+            const words = items.map((item) => enc(dictationText(item.word))).join("|");
+            if (items.some((item) => /[A-Z.?!,;:]/.test(item.word))) {
+                warning = warning || "Hoofdletters en leestekens verschijnen niet in het dictee: de cursist ziet en typt alles in kleine letters.";
+            }
             const missing = items.map((item) => item.missing.map((x) => x + 1).join(",")).join("|");
             let url = `${TOOLS.dictee.base}?woord=${words}&ontbreekt=${missing}`;
             if (d.voorbeeld) url += "&voorbeeld=ja";
@@ -2749,12 +2767,13 @@
                 const box = $("#d-word-audio");
                 if (!box) return;
                 const item = dItem();
-                const word = item.word.trim().toLowerCase();
-                if (item.audio || !isWordForAudio(word)) {
+                const word = dictationText(item.word);
+                const sentence = /\s/.test(word);
+                if (item.audio || !word || (!sentence && !isWordForAudio(word)) || (sentence && !sentenceFileName(word))) {
                     box.innerHTML = "";
                     box.dataset.key = "";
                 } else {
-                    showSingleCheck(box, "woord", word);
+                    showSingleCheck(box, sentence ? "zin" : "woord", word);
                 }
             } else if (tool === "sleep") {
                 const box = $("#s-text-audio");
