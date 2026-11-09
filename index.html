@@ -123,7 +123,7 @@
         /* Keuze van de tool */
         .tools {
             display: grid;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
             gap: 10px;
         }
         .tool {
@@ -372,6 +372,17 @@
         .position-head strong { flex: 1; white-space: nowrap; }
         .position .chips { min-height: 34px; }
         .position .none { color: var(--muted); font-size: 0.92rem; }
+        .board-line { padding: 6px 12px; background: #fafafa; }
+        .line-sample {
+            display: inline-block;
+            width: 34px;
+            height: 3px;
+            margin-right: 8px;
+            vertical-align: middle;
+            background: #7d9a90;
+            border-radius: 2px;
+        }
+        .line-sample.dark { background: #4d5a6b; }
 
         .wordlist {
             max-height: 230px;
@@ -526,6 +537,7 @@
                     <button class="tool" data-tool="klikklak"><span class="ico"></span>Klik-klak<small>boekje met flapjes</small></button>
                     <button class="tool" data-tool="sleep"><span class="ico"></span>Sleep<small>letters naar vakjes</small></button>
                     <button class="tool" data-tool="flitser"><span class="ico"></span>Flitser<small>letters of woorden flitsen</small></button>
+                    <button class="tool" data-tool="letterbord"><span class="ico"></span>Letterbord<small>klikken, luisteren, schrijven</small></button>
                 </div>
                 <details class="load" style="margin-top:14px">
                     <summary>Een bestaande link aanpassen</summary>
@@ -676,6 +688,12 @@
                 base: `${ROOT}flitser/`,
                 iframeTitle: "Letterlab flitser",
             },
+            letterbord: {
+                title: "Letterbord",
+                repo: "letterbord",
+                base: `${ROOT}letterbord/`,
+                iframeTitle: "Letterlab letterbord",
+            },
         };
 
         // Dezelfde klankgroepen als in de tools: de langste eerst.
@@ -768,18 +786,19 @@
                 media: { instructie: "", beeld: "", audio: "" },
                 dictee: {
                     items: [{ word: "", missing: [], beeld: "", audio: "" }],
-                    active: 0, voorbeeld: false, toetsen: "letters",
+                    active: 0, voorbeeld: false, toetsen: "letters", grootte: 100,
                 },
                 klikklak: { positions: [[], [], []], woorden: true, uit: [], active: 0, onder: "" },
                 sleep: {
                     text: "", mode: "letters", gaps: [], extras: [], order: [],
                     mix: true, weg: true, klank: false, woord: false, luister: false,
-                    elkwoord: false,
+                    elkwoord: false, grootte: 100,
                 },
                 flitser: {
                     soort: "klanken", items: [], woorden: "", samen: 1,
                     tempo: "klik", mix: false, herhaal: false, luister: false,
                 },
+                letterbord: { rows: [[]], active: 0, modus: "schrijven" },
             };
         }
 
@@ -788,7 +807,7 @@
             const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
             if (saved && saved.tool) {
                 state = Object.assign(freshState(), saved);
-                ["media", "dictee", "klikklak", "sleep", "flitser"].forEach((key) => {
+                ["media", "dictee", "klikklak", "sleep", "flitser", "letterbord"].forEach((key) => {
                     state[key] = Object.assign(freshState()[key], saved[key] || {});
                 });
                 // Vroeger had het dictee maar één woord (word en missing).
@@ -928,7 +947,8 @@
                     <button data-keys="letters">Letters</button>
                     <button data-keys="cijfers">Cijfers</button>
                     <button data-keys="beide">Letters + cijfers</button>
-                </div>`;
+                </div>
+                ${textSizeHtml("d-grootte")}`;
 
             $("#d-word").addEventListener("input", (event) => {
                 const item = dItem();
@@ -948,6 +968,7 @@
                 update();
             });
             $("#form").addEventListener("click", dictationClick);
+            bindTextSize("d-grootte", d);
             refreshDictation();
         }
 
@@ -1105,6 +1126,7 @@
             let url = `${TOOLS.dictee.base}?woord=${words}&ontbreekt=${missing}`;
             if (d.voorbeeld) url += "&voorbeeld=ja";
             if (d.toetsen !== "letters") url += `&toetsen=${d.toetsen}`;
+            url += textSizePart(d);
             return { url, warning };
         }
 
@@ -1583,7 +1605,8 @@
                     <div id="s-elkwoord-box">${switchHtml("s-elkwoord", "Luisterknop boven elk woord", "Ook boven de woorden die er al staan. Verschijnt enkel als de opname bestaat.", s.elkwoord)}</div>
                     <div id="s-woord-box">${switchHtml("s-woord", "Audioknop onder het woord", "Verschijnt enkel als het audiofragment beschikbaar is.", s.woord)}</div>
                     <div id="s-luister-box">${switchHtml("s-luister", "Luisterknop na juist antwoord", "Verschijnt enkel als het audiofragment beschikbaar is.", s.luister)}</div>
-                </div>`;
+                </div>
+                ${textSizeHtml("s-grootte")}`;
 
             $("#s-text").addEventListener("input", (event) => {
                 const oldTokens = sleepTokens(s.text.trim(), sleepMode()).filter((t) => t.type === "unit").map((t) => t.text).join("|");
@@ -1609,6 +1632,7 @@
                 });
             });
             $("#form").addEventListener("click", sleepClick);
+            bindTextSize("s-grootte", s);
             $("#form").addEventListener("keydown", (event) => {
                 if (event.key === "Enter" && event.target.id === "s-own") addSleepExtras();
             });
@@ -1764,6 +1788,7 @@
             if (s.elkwoord && sleepIsSentence()) url += "&elkwoord=ja";
             if (s.woord && !numbers) url += "&woord=ja";
             if (s.luister && !numbers) url += "&luister=ja";
+            url += textSizePart(s);
             return { url, warning };
         }
 
@@ -1921,6 +1946,269 @@
                 warning = `Er zijn maar ${list.length} items: ze komen allemaal tegelijk op het scherm.`;
             }
             return { url, warning };
+        }
+
+        // ============================================================
+        // 6c. LETTERBORD
+        // ============================================================
+
+        // Een bord is een lijst van rijen. Een rij is een lijst tekens,
+        // of "-" (lichte lijn) of "=" (donkere lijn).
+        const reeks = (from, to, step = 1) => {
+            const list = [];
+            for (let n = from; n <= to; n += step) list.push(String(n));
+            return list;
+        };
+        const BOARD_PRESETS = {
+            letters: {
+                label: "Alle letters",
+                rows: [["i", "a", "e", "o", "u"], "-", ["aa", "ee", "oo", "uu"], "-",
+                    ["ij", "oe", "ie", "ui"], ["ou", "eu", "ei", "au"], "=",
+                    ["k", "m", "p", "n", "d"], ["r", "t", "s", "g", "z"],
+                    ["l", "v", "h", "b", "j"], ["f", "w"]],
+            },
+            cijfers: { label: "Cijfers 0-9", rows: [reeks(0, 4), reeks(5, 9)] },
+            getallen: {
+                label: "Getallen 0-50",
+                rows: [reeks(0, 4), reeks(5, 9), "-", reeks(10, 14), reeks(15, 19), "-",
+                    reeks(20, 24), reeks(25, 29), "-", reeks(30, 34), reeks(35, 39), "-",
+                    reeks(40, 44), reeks(45, 49), "-", ["50"]],
+            },
+            tientallen: { label: "Tientallen", rows: [reeks(10, 50, 10), reeks(60, 100, 10)] },
+            leeg: { label: "Leeg bord", rows: [[]] },
+        };
+        const BOARD_MODES = {
+            lezen: "Bij een klik hoort de cursist de klank of het getal.",
+            groot: "Bij een klik hoort de cursist de klank en verschijnt de letter groot in beeld.",
+            schrijven: "Bij een klik hoort de cursist de klank en ziet hij het schrijffilmpje. Is er nog geen filmpje, dan verschijnt de grote letter.",
+        };
+        const BOARD_DIGITS = reeks(0, 9);
+
+        function boardRows() {
+            const b = state.letterbord;
+            if (!Array.isArray(b.rows) || !b.rows.length) b.rows = [[]];
+            return b.rows;
+        }
+
+        function renderBoardForm() {
+            const b = state.letterbord;
+            $("#form").innerHTML = `
+                <div class="label">Begin met</div>
+                <div class="mini-actions" id="b-presets" style="margin-top:0">
+                    ${Object.entries(BOARD_PRESETS).map(([key, preset]) =>
+                        `<button class="mini" data-preset="${key}">${preset.label}</button>`).join("")}
+                </div>
+                <p class="hint">Dit vervangt het bord hieronder. Daarna kun je alles aanpassen.</p>
+
+                <div class="label" style="margin-top:14px">Rijen</div>
+                <p class="hint" style="margin:-2px 0 10px">Tik een rij aan en kies daaronder de letters, klanken of getallen. Tik op een gekozen teken om het weg te halen.</p>
+                <div class="positions" id="b-rows"></div>
+                <div class="mini-actions" style="margin-top:10px">
+                    <button class="btn light" data-b="add-row">+ rij</button>
+                    <button class="btn light" data-b="add-line" data-line="-">+ lichte lijn</button>
+                    <button class="btn light" data-b="add-line" data-line="=">+ donkere lijn</button>
+                </div>
+                <p class="hint">Klinkers worden vanzelf turquoise, de andere tekens donkerblauw.</p>
+
+                <div class="label" style="margin-top:18px">Wat gebeurt er bij een klik?</div>
+                <div class="segment" role="group" aria-label="Werking" id="b-mode">
+                    <button data-mode="lezen">Klank</button>
+                    <button data-mode="groot">Klank + grote letter</button>
+                    <button data-mode="schrijven">Klank + schrijffilmpje</button>
+                </div>
+                <p class="hint" id="b-mode-hint"></p>`;
+            $("#form").addEventListener("click", boardClick);
+            $("#form").addEventListener("keydown", (event) => {
+                if (event.key === "Enter" && event.target.id === "b-own") addBoardOwn();
+            });
+            refreshBoard();
+        }
+
+        function addBoardOwn() {
+            const rows = boardRows();
+            const b = state.letterbord;
+            const row = rows[b.active];
+            if (!Array.isArray(row)) return;
+            splitList($("#b-own").value.toLowerCase()).forEach((item) => {
+                if (!row.includes(item)) row.push(item);
+            });
+            $("#b-own").value = "";
+            refreshBoard();
+            update();
+            const again = $("#b-own");
+            if (again) again.focus();
+        }
+
+        function boardClick(event) {
+            const b = state.letterbord;
+            const rows = boardRows();
+            const target = event.target.closest("button");
+            if (!target || state.tool !== "letterbord") return;
+            const data = target.dataset;
+            const index = Number(data.index);
+
+            if (data.preset) {
+                b.rows = BOARD_PRESETS[data.preset].rows.map((row) => (Array.isArray(row) ? [...row] : row));
+                b.active = b.rows.findIndex((row) => Array.isArray(row));
+            } else if (data.mode) {
+                b.modus = data.mode;
+            } else if (data.b === "add-row") {
+                rows.push([]);
+                b.active = rows.length - 1;
+            } else if (data.b === "add-line") {
+                rows.push(data.line);
+            } else if (data.b === "activate") {
+                b.active = index;
+            } else if (data.b === "up" && index > 0) {
+                [rows[index - 1], rows[index]] = [rows[index], rows[index - 1]];
+                if (b.active === index) b.active -= 1;
+                else if (b.active === index - 1) b.active += 1;
+            } else if (data.b === "down" && index < rows.length - 1) {
+                [rows[index + 1], rows[index]] = [rows[index], rows[index + 1]];
+                if (b.active === index) b.active += 1;
+                else if (b.active === index + 1) b.active -= 1;
+            } else if (data.b === "remove") {
+                rows.splice(index, 1);
+                if (!rows.length) rows.push([]);
+                if (b.active >= index) b.active = Math.max(0, b.active - 1);
+            } else if (data.b === "line-kind") {
+                rows[index] = rows[index] === "=" ? "-" : "=";
+            } else if (data.b === "clear") {
+                rows[index] = [];
+            } else if (data.b === "own") {
+                addBoardOwn();
+                return;
+            } else if (data.bsound !== undefined) {
+                const row = rows[b.active];
+                if (!Array.isArray(row)) return;
+                const at = row.indexOf(data.bsound);
+                if (at >= 0) row.splice(at, 1);
+                else row.push(data.bsound);
+            } else if (data.bremove !== undefined) {
+                rows[index] = rows[index].filter((x) => x !== data.bremove);
+            } else {
+                return;
+            }
+            refreshBoard();
+            update();
+        }
+
+        function refreshBoard() {
+            const b = state.letterbord;
+            const rows = boardRows();
+            if (!Array.isArray(rows[b.active])) {
+                const first = rows.findIndex((row) => Array.isArray(row));
+                b.active = first >= 0 ? first : 0;
+            }
+            let number = 0;
+            const tools = (index) => `
+                <button class="mini" data-b="up" data-index="${index}" ${index === 0 ? "disabled" : ""} aria-label="Hoger">↑</button>
+                <button class="mini" data-b="down" data-index="${index}" ${index === rows.length - 1 ? "disabled" : ""} aria-label="Lager">↓</button>`;
+            $("#b-rows").innerHTML = rows.map((row, index) => {
+                if (!Array.isArray(row)) {
+                    return `<div class="position board-line">
+                        <div class="position-head" style="margin:0">
+                            <strong><span class="line-sample ${row === "=" ? "dark" : ""}"></span>${row === "=" ? "Donkere lijn" : "Lichte lijn"}</strong>
+                            <button class="mini" data-b="line-kind" data-index="${index}">${row === "=" ? "Maak licht" : "Maak donker"}</button>
+                            ${tools(index)}
+                            <button class="mini" data-b="remove" data-index="${index}" aria-label="Lijn verwijderen">🗑</button>
+                        </div>
+                    </div>`;
+                }
+                number += 1;
+                const active = index === b.active;
+                const chips = row.length
+                    ? row.map((sound) => `<button class="chip removable" aria-pressed="true"
+                        data-index="${index}" data-bremove="${escapeHtml(sound)}"
+                        aria-label="${escapeHtml(sound)} weghalen">${escapeHtml(sound)}</button>`).join("")
+                    : `<span class="none">Nog leeg.</span>`;
+                return `<div class="position ${active ? "active" : ""}">
+                    <div class="position-head">
+                        <strong>Rij ${number}</strong>
+                        ${row.length ? `<button class="mini" data-b="clear" data-index="${index}">Leegmaken</button>` : ""}
+                        ${tools(index)}
+                        <button class="mini" data-b="remove" data-index="${index}" aria-label="Rij ${number} verwijderen">🗑</button>
+                    </div>
+                    <div class="chips">${chips}</div>
+                    ${active ? `
+                        ${paletteHtml(row, "bsound")}
+                        <div style="margin-top:10px">
+                            <div class="group-label">Cijfers</div>
+                            <div class="chips">${BOARD_DIGITS.map((digit) => `<button class="chip"
+                                data-bsound="${digit}" aria-pressed="${row.includes(digit)}">${digit}</button>`).join("")}</div>
+                        </div>
+                        <div class="add-row">
+                            <input type="text" id="b-own" placeholder="Ander teken of getal, bv. ng, 25, 100" autocomplete="off" autocapitalize="off">
+                            <button class="btn light" data-b="own">Toevoegen</button>
+                        </div>`
+                    : `<div class="mini-actions"><button class="mini" data-b="activate" data-index="${index}">Tekens kiezen</button></div>`}
+                </div>`;
+            }).join("");
+            document.querySelectorAll("#b-mode button").forEach((button) => {
+                button.setAttribute("aria-pressed", String(button.dataset.mode === b.modus));
+            });
+            $("#b-mode-hint").textContent = BOARD_MODES[b.modus] || "";
+        }
+
+        function boardLink() {
+            const b = state.letterbord;
+            const rows = boardRows();
+            const filled = rows.filter((row) => Array.isArray(row) && row.length);
+            if (!filled.length) return { problem: "Kies minstens één letter, klank of getal." };
+            // Lijnen aan het begin of einde, of twee na elkaar, laten we weg.
+            const kept = [];
+            rows.forEach((row) => {
+                if (Array.isArray(row)) {
+                    if (row.length) kept.push(row);
+                } else if (kept.length && Array.isArray(kept[kept.length - 1])) {
+                    kept.push(row);
+                }
+            });
+            while (kept.length && !Array.isArray(kept[kept.length - 1])) kept.pop();
+            const text = kept.map((row) => (Array.isArray(row) ? row.map(enc).join(",") : row)).join("|");
+            const url = `${TOOLS.letterbord.base}?rijen=${text}&modus=${b.modus}`;
+            const widest = Math.max(...filled.map((row) => row.length));
+            const warning = widest > 10
+                ? `Een rij met ${widest} tekens wordt op een tablet of gsm erg klein. Verdeel liever over meer rijen.`
+                : "";
+            return { url, warning };
+        }
+
+        // Lettergrootte in het dictee en de sleepoefening (grootte= in de link).
+        const TEXT_SIZES = [
+            { value: 85, label: "Kleiner" },
+            { value: 100, label: "Gewoon" },
+            { value: 125, label: "Groter" },
+            { value: 150, label: "Veel groter" },
+        ];
+        function textSizeHtml(id) {
+            return `<div class="label" style="margin-top:16px">Lettergrootte</div>
+                <div class="segment" role="group" aria-label="Lettergrootte" id="${id}">
+                    ${TEXT_SIZES.map((size) => `<button data-grootte="${size.value}">${size.label}</button>`).join("")}
+                </div>
+                <p class="hint">De letters worden nooit groter dan er plaats is.</p>`;
+        }
+        function bindTextSize(id, part) {
+            const box = $(`#${id}`);
+            const mark = () => box.querySelectorAll("button").forEach((button) => {
+                button.setAttribute("aria-pressed", String(Number(button.dataset.grootte) === (part.grootte || 100)));
+            });
+            box.addEventListener("click", (event) => {
+                const button = event.target.closest("button[data-grootte]");
+                if (!button) return;
+                event.stopPropagation();
+                part.grootte = Number(button.dataset.grootte);
+                mark();
+                update();
+            });
+            mark();
+        }
+        function textSizePart(part) {
+            return part.grootte && part.grootte !== 100 ? `&grootte=${part.grootte}` : "";
+        }
+        function readTextSize(value) {
+            const number = Number.parseInt(value, 10);
+            return Number.isFinite(number) && number >= 50 && number <= 200 ? number : 100;
         }
 
         // ============================================================
@@ -3044,6 +3332,7 @@
 
         function defaultHeight() {
             if (state.tool === "flitser") return 450;
+            if (state.tool === "letterbord") return 650;
             return state.tool === "sleep" && state.view === "klein" ? 200 : 650;
         }
 
@@ -3056,9 +3345,11 @@
             const result = state.tool === "dictee"
                 ? dictationLink()
                 : state.tool === "klikklak" ? clickBookLink()
-                    : state.tool === "flitser" ? flashLink() : sleepLink();
+                    : state.tool === "flitser" ? flashLink()
+                        : state.tool === "letterbord" ? boardLink() : sleepLink();
             if (result.problem) return result;
-            const url = result.url + (state.tool === "flitser" ? "" : mediaPart());
+            const noMedia = state.tool === "flitser" || state.tool === "letterbord";
+            const url = result.url + (noMedia ? "" : mediaPart());
             const height = currentHeight();
             const transparent = state.tool === "klikklak" || state.tool === "flitser"
                 || (state.tool === "sleep" && state.view === "klein");
@@ -3222,6 +3513,7 @@
                     voorbeeld: get("voorbeeld").toLowerCase().startsWith("ja"),
                     toetsen: ["cijfers", "beide"].includes(get("toetsen").toLowerCase())
                         ? get("toetsen").toLowerCase() : "letters",
+                    grootte: readTextSize(get("grootte")),
                 });
             } else if (path.includes("/klikklak")) {
                 const positions = [];
@@ -3255,6 +3547,7 @@
                     woord: yes("woord"),
                     luister: yes("luister"),
                     elkwoord: yes("elkwoord"),
+                    grootte: readTextSize(get("grootte")),
                 });
                 const { answers } = sleepExercise();
                 state.sleep.extras = unique(keuzes.filter((card) => !answers.includes(card)));
@@ -3276,6 +3569,23 @@
                     herhaal: yes("herhaal"),
                     luister: yes("luister"),
                 });
+            } else if (path.includes("/letterbord")) {
+                let rows;
+                if (get("rijen")) {
+                    rows = get("rijen").split("|").map((row) => row.trim()).filter(Boolean)
+                        .map((row) => (row === "-" || row === "=" ? row : splitList(row)));
+                } else {
+                    const preset = BOARD_PRESETS[get("bord").toLowerCase()] || BOARD_PRESETS.letters;
+                    rows = preset.rows.map((row) => (Array.isArray(row) ? [...row] : row));
+                }
+                if (!rows.some((row) => Array.isArray(row) && row.length)) return "Dit letterbord is leeg.";
+                state.tool = "letterbord";
+                state.letterbord = {
+                    rows,
+                    active: rows.findIndex((row) => Array.isArray(row)),
+                    modus: ["lezen", "groot", "schrijven"].includes(get("modus").toLowerCase())
+                        ? get("modus").toLowerCase() : "schrijven",
+                };
             } else {
                 return "Deze link hoort niet bij een Letterlab-oefening.";
             }
@@ -3299,8 +3609,9 @@
             if (state.tool === "dictee") renderDictationForm();
             else if (state.tool === "klikklak") renderClickBookForm();
             else if (state.tool === "flitser") renderFlashForm();
+            else if (state.tool === "letterbord") renderBoardForm();
             else renderSleepForm();
-            $("#view-card").classList.toggle("hidden", state.tool === "flitser");
+            $("#view-card").classList.toggle("hidden", state.tool === "flitser" || state.tool === "letterbord");
             renderView();
         }
 
