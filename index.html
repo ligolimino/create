@@ -2048,8 +2048,10 @@
                     <button data-align="links">Links</button>
                     <button data-align="midden">Midden</button>
                     <button data-align="rechts">Rechts</button>
+                    <button data-align="spreiden">Spreiden</button>
+                    <button data-align="uitrekken">Uitrekken</button>
                 </div>
-                <p class="hint">Het icoontje komt aan de lege kant van de laatste rij.</p>
+                <p class="hint" id="b-align-hint"></p>
 
                 <div class="label" style="margin-top:18px">Icoontje</div>
                 <div class="segment" role="group" aria-label="Icoontje" id="b-icon">
@@ -2194,6 +2196,13 @@
             document.querySelectorAll("#b-align button").forEach((button) => {
                 button.setAttribute("aria-pressed", String(button.dataset.align === (b.uitlijning || "midden")));
             });
+            $("#b-align-hint").textContent = {
+                links: "Tegels tegen de linkerkant. Het icoontje komt rechts naast de laatste rij.",
+                midden: "Tegels in het midden. Het icoontje komt links naast de laatste rij.",
+                rechts: "Tegels tegen de rechterkant. Het icoontje komt links naast de laatste rij.",
+                spreiden: "Elke rij even breed: de tegels blijven even groot, de ruimte ertussen wordt groter.",
+                uitrekken: "Elke rij even breed: de ruimte blijft gelijk, de tegels worden breder.",
+            }[b.uitlijning || "midden"];
             document.querySelectorAll("#b-icon button").forEach((button) => {
                 button.setAttribute("aria-pressed", String(button.dataset.icon === (b.icoon || "")));
             });
@@ -3638,7 +3647,7 @@
                     active: rows.findIndex((row) => Array.isArray(row)),
                     modus: ["lezen", "groot", "schrijven"].includes(get("modus").toLowerCase())
                         ? get("modus").toLowerCase() : "schrijven",
-                    uitlijning: ["links", "rechts"].includes(get("uitlijning").toLowerCase())
+                    uitlijning: ["links", "rechts", "spreiden", "uitrekken"].includes(get("uitlijning").toLowerCase())
                         ? get("uitlijning").toLowerCase() : "midden",
                     icoon: ["lezen", "luisteren", "schrijven", "geen"].includes(get("icoon").toLowerCase())
                         ? get("icoon").toLowerCase() : "",
