@@ -798,7 +798,7 @@
                     soort: "klanken", items: [], woorden: "", samen: 1,
                     tempo: "klik", mix: false, herhaal: false, luister: false,
                 },
-                letterbord: { rows: [[]], active: 0, modus: "schrijven" },
+                letterbord: { rows: [[]], active: 0, modus: "schrijven", uitlijning: "midden", icoon: "" },
             };
         }
 
@@ -1980,9 +1980,16 @@
         const BOARD_MODES = {
             lezen: "Bij een klik hoort de cursist de klank of het getal.",
             groot: "Bij een klik hoort de cursist de klank en verschijnt de letter groot in beeld.",
-            schrijven: "Bij een klik hoort de cursist de klank en ziet hij het schrijffilmpje. Is er nog geen filmpje, dan verschijnt de grote letter.",
+            schrijven: "Bij een klik hoort de cursist de klank en ziet hij het schrijffilmpje. Getallen vanaf 10, en letters zonder filmpje, verschijnen groot.",
         };
         const BOARD_DIGITS = reeks(0, 9);
+        const BOARD_ICONS = [
+            { value: "", label: "Automatisch", hint: "Klank: oor. Grote letter: leesblad. Schrijffilmpje: potlood." },
+            { value: "lezen", label: "Leesblad", hint: "" },
+            { value: "luisteren", label: "Oor", hint: "" },
+            { value: "schrijven", label: "Potlood", hint: "" },
+            { value: "geen", label: "Geen", hint: "" },
+        ];
 
         function boardRows() {
             const b = state.letterbord;
@@ -2016,7 +2023,21 @@
                     <button data-mode="groot">Klank + grote letter</button>
                     <button data-mode="schrijven">Klank + schrijffilmpje</button>
                 </div>
-                <p class="hint" id="b-mode-hint"></p>`;
+                <p class="hint" id="b-mode-hint"></p>
+
+                <div class="label" style="margin-top:18px">Rijen die niet vol zijn</div>
+                <div class="segment" role="group" aria-label="Uitlijning" id="b-align">
+                    <button data-align="links">Links</button>
+                    <button data-align="midden">Midden</button>
+                    <button data-align="rechts">Rechts</button>
+                </div>
+                <p class="hint">Het icoontje komt aan de lege kant van de laatste rij.</p>
+
+                <div class="label" style="margin-top:18px">Icoontje</div>
+                <div class="segment" role="group" aria-label="Icoontje" id="b-icon">
+                    ${BOARD_ICONS.map((icon) => `<button data-icon="${icon.value}">${icon.label}</button>`).join("")}
+                </div>
+                <p class="hint" id="b-icon-hint"></p>`;
             $("#form").addEventListener("click", boardClick);
             $("#form").addEventListener("keydown", (event) => {
                 if (event.key === "Enter" && event.target.id === "b-own") addBoardOwn();
@@ -2052,6 +2073,10 @@
                 b.active = b.rows.findIndex((row) => Array.isArray(row));
             } else if (data.mode) {
                 b.modus = data.mode;
+            } else if (data.align) {
+                b.uitlijning = data.align;
+            } else if (data.icon !== undefined) {
+                b.icoon = data.icon;
             } else if (data.b === "add-row") {
                 rows.push([]);
                 b.active = rows.length - 1;
@@ -2148,6 +2173,13 @@
                 button.setAttribute("aria-pressed", String(button.dataset.mode === b.modus));
             });
             $("#b-mode-hint").textContent = BOARD_MODES[b.modus] || "";
+            document.querySelectorAll("#b-align button").forEach((button) => {
+                button.setAttribute("aria-pressed", String(button.dataset.align === (b.uitlijning || "midden")));
+            });
+            document.querySelectorAll("#b-icon button").forEach((button) => {
+                button.setAttribute("aria-pressed", String(button.dataset.icon === (b.icoon || "")));
+            });
+            $("#b-icon-hint").textContent = (BOARD_ICONS.find((icon) => icon.value === (b.icoon || "")) || BOARD_ICONS[0]).hint;
         }
 
         function boardLink() {
@@ -2166,7 +2198,9 @@
             });
             while (kept.length && !Array.isArray(kept[kept.length - 1])) kept.pop();
             const text = kept.map((row) => (Array.isArray(row) ? row.map(enc).join(",") : row)).join("|");
-            const url = `${TOOLS.letterbord.base}?rijen=${text}&modus=${b.modus}`;
+            let url = `${TOOLS.letterbord.base}?rijen=${text}&modus=${b.modus}`;
+            if (b.uitlijning && b.uitlijning !== "midden") url += `&uitlijning=${b.uitlijning}`;
+            if (b.icoon) url += `&icoon=${b.icoon}`;
             const widest = Math.max(...filled.map((row) => row.length));
             const warning = widest > 10
                 ? `Een rij met ${widest} tekens wordt op een tablet of gsm erg klein. Verdeel liever over meer rijen.`
@@ -3585,6 +3619,10 @@
                     active: rows.findIndex((row) => Array.isArray(row)),
                     modus: ["lezen", "groot", "schrijven"].includes(get("modus").toLowerCase())
                         ? get("modus").toLowerCase() : "schrijven",
+                    uitlijning: ["links", "rechts"].includes(get("uitlijning").toLowerCase())
+                        ? get("uitlijning").toLowerCase() : "midden",
+                    icoon: ["lezen", "luisteren", "schrijven", "geen"].includes(get("icoon").toLowerCase())
+                        ? get("icoon").toLowerCase() : "",
                 };
             } else {
                 return "Deze link hoort niet bij een Letterlab-oefening.";
