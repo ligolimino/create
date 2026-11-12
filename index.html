@@ -789,7 +789,7 @@
                     items: [{ word: "", missing: [], beeld: "", audio: "" }],
                     active: 0, voorbeeld: false, toetsen: "letters", grootte: 100,
                 },
-                klikklak: { positions: [[], [], []], woorden: true, uit: [], active: 0, onder: "" },
+                klikklak: { positions: [[], [], []], woorden: true, uit: [], active: 0, onder: "audio" },
                 sleep: {
                     text: "", mode: "letters", gaps: [], extras: [], order: [],
                     mix: true, weg: true, klank: false, woord: false, luister: false,
@@ -824,7 +824,16 @@
                 }
                 delete state.dictee.word;
                 delete state.dictee.missing;
+                // Nieuwe standaardinstellingen (nov. 2026): eenmalig toepassen,
+                // ook als de maker eerder andere keuzes onthield.
+                // Klik-klak: geen woord onder de flapjes, wel de luisterknop.
+                // Sleepoefening: geen luisterknop bij de verbetering.
+                if ((saved.standaard || 0) < 2) {
+                    state.klikklak.onder = "audio";
+                    state.sleep.luister = false;
+                }
             }
+            state.standaard = 2;
         } catch {
             // Geen opslag beschikbaar: gewoon opnieuw beginnen.
         }
@@ -1202,7 +1211,7 @@
 
         // Wat er onder het boekje staat (onder= in de link).
         const BELOW_CHOICES = [
-            { value: "", label: "Woord + luisterknop", hint: "Zoals altijd: het gevormde woord met een luisterknop." },
+            { value: "", label: "Woord + luisterknop", hint: "Het gevormde woord met een luisterknop." },
             { value: "luisteren", label: "Woord na luisteren", hint: "De cursist leest eerst zelf en controleert met de luisterknop. Dan verschijnt het woord." },
             { value: "audio", label: "Alleen luisterknop", hint: "Het gevormde woord staat er niet onder; de luisterknop wel." },
             { value: "woord", label: "Alleen woord", hint: "Het gevormde woord zonder luisterknop." },
