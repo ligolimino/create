@@ -798,6 +798,7 @@
                 flitser: {
                     soort: "klanken", items: [], woorden: "", samen: 1,
                     tempo: "klik", mix: false, herhaal: false, luister: false,
+                    grootte: 100,
                 },
                 letterbord: { rows: [[]], active: 0, modus: "schrijven", uitlijning: "midden", icoon: "" },
             };
@@ -1879,12 +1880,14 @@
                     ${switchHtml("f-mix", "Door elkaar", "Elke ronde een andere volgorde.", f.mix)}
                     <div id="f-herhaal-box">${switchHtml("f-herhaal", "Blijven herhalen", "Na de laatste flits begint het opnieuw.", f.herhaal)}</div>
                     ${switchHtml("f-luister", "Luisterknop", "De cursist zegt eerst zelf de klank of het woord en controleert dan door te luisteren.", f.luister)}
-                </div>`;
+                </div>
+                ${textSizeHtml("f-grootte", FLASH_SIZES, "Zo groot mogelijk vult het hele scherm. Kies kleiner als het op een groot scherm te groot is.")}`;
 
             $("#f-woorden").addEventListener("input", (event) => {
                 f.woorden = event.target.value;
                 update();
             });
+            bindTextSize("f-grootte", f);
             ["mix", "herhaal", "luister"].forEach((key) => {
                 $(`#f-${key}`).addEventListener("change", (event) => {
                     f[key] = event.target.checked;
@@ -1968,6 +1971,7 @@
             if (f.mix) url += "&mix=ja";
             if (f.herhaal && f.tempo !== "klik") url += "&herhaal=ja";
             if (f.luister) url += "&luister=ja";
+            url += textSizePart(f);
             let warning = "";
             if (f.samen > list.length) {
                 warning = `Er zijn maar ${list.length} items: ze komen allemaal tegelijk op het scherm.`;
@@ -2251,12 +2255,20 @@
             { value: 125, label: "Groter" },
             { value: 150, label: "Veel groter" },
         ];
-        function textSizeHtml(id) {
+        // De flitser vult standaard het hele scherm; daar kies je hoeveel
+        // procent van die grootst mogelijke maat.
+        const FLASH_SIZES = [
+            { value: 40, label: "Klein" },
+            { value: 60, label: "Middel" },
+            { value: 80, label: "Groot" },
+            { value: 100, label: "Zo groot mogelijk" },
+        ];
+        function textSizeHtml(id, sizes = TEXT_SIZES, hint = "De letters worden nooit groter dan er plaats is.") {
             return `<div class="label" style="margin-top:16px">Lettergrootte</div>
                 <div class="segment" role="group" aria-label="Lettergrootte" id="${id}">
-                    ${TEXT_SIZES.map((size) => `<button data-grootte="${size.value}">${size.label}</button>`).join("")}
+                    ${sizes.map((size) => `<button data-grootte="${size.value}">${size.label}</button>`).join("")}
                 </div>
-                <p class="hint">De letters worden nooit groter dan er plaats is.</p>`;
+                <p class="hint">${hint}</p>`;
         }
         function bindTextSize(id, part) {
             const box = $(`#${id}`);
@@ -3639,6 +3651,7 @@
                     mix: yes("mix"),
                     herhaal: yes("herhaal"),
                     luister: yes("luister"),
+                    grootte: Math.min(100, Math.max(20, Number.parseInt(get("grootte"), 10) || 100)),
                 });
             } else if (path.includes("/letterbord")) {
                 let rows;
