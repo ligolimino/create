@@ -301,6 +301,8 @@
             cursor: default;
         }
         .chip.removable::after { content: " ×"; opacity: 0.6; }
+        .pair-preview { display: inline-flex; flex-direction: column; align-items: center; gap: 4px; margin: 0 6px 6px 0; }
+        .pair-preview .sep { font-size: 1.2rem; }
         /* Dictee-reeks: woordknop met een klein kruisje ernaast. */
         .d-items { align-items: center; margin-bottom: 6px; }
         .d-item { display: inline-flex; align-items: stretch; }
@@ -791,7 +793,7 @@
                 },
                 klikklak: { positions: [[], [], []], woorden: true, uit: [], active: 0, onder: "audio" },
                 sleep: {
-                    text: "", mode: "letters", gaps: [], extras: [], order: [],
+                    text: "", mode: "letters", gaps: [], extras: [], order: [], richting: "groot",
                     mix: true, weg: true, klank: false, woord: false, luister: false,
                     elkwoord: false, grootte: 100,
                 },
@@ -1504,8 +1506,26 @@
 
         // Zet de getypte tekst om in stukjes: aantikbare stukjes ("unit")
         // en vaste tekens zoals spaties en leestekens ("sep").
+        // Leestekens die zelf een vakje kunnen worden (bv. Ik ben Kim[.]).
+        const PUNCTUATION = [".", ",", "?", "!", ":", ";"];
+
         function sleepTokens(text, mode) {
             const tokens = [];
+            // Leestekens worden aantikbare stukjes, behalve bij getallen
+            // en koppels.
+            const punctUnits = !["getallen", "koppels"].includes(mode);
+            const pushSep = (sep) => {
+                if (!punctUnits) {
+                    tokens.push({ type: "sep", text: sep });
+                    return;
+                }
+                [...sep].forEach((ch) => {
+                    const last = tokens[tokens.length - 1];
+                    if (PUNCTUATION.includes(ch)) tokens.push({ type: "unit", text: ch, punct: true });
+                    else if (last && last.type === "sep" && !/^\s+$/.test(last.text)) last.text += ch;
+                    else tokens.push({ type: "sep", text: ch });
+                });
+            };
             const pieces = text.split(/(\s+)/);
             pieces.forEach((piece) => {
                 if (!piece) return;
@@ -1515,18 +1535,18 @@
                 }
                 const match = piece.match(/^([^\p{L}\p{N}]*)(.*?)([^\p{L}\p{N}]*)$/u);
                 const [, before, core, after] = match;
-                if (before) tokens.push({ type: "sep", text: before });
+                if (before) pushSep(before);
                 if (core) {
-                    if (mode === "woorden" || mode === "getallen") {
+                    if (mode === "woorden" || mode === "getallen" || mode === "koppels") {
                         tokens.push({ type: "unit", text: core });
                     } else {
                         graphemes(core).forEach((part) => {
                             if (/[\p{L}\p{N}]/u.test(part)) tokens.push({ type: "unit", text: part });
-                            else tokens.push({ type: "sep", text: part });
+                            else pushSep(part);
                         });
                     }
                 }
-                if (after) tokens.push({ type: "sep", text: after });
+                if (after) pushSep(after);
             });
             let unitIndex = 0;
             tokens.forEach((token) => {
@@ -1556,6 +1576,19 @@
             return sleepMode() === "getallen";
         }
 
+        function sleepIsPairs() {
+            return sleepMode() === "koppels" && !sleepIsRaw();
+        }
+
+        // Koppels: elk getypt teken krijgt de andere vorm (hoofdletter of
+        // kleine letter) als kaartje.
+        function sleepPair(text) {
+            const upper = state.sleep.richting !== "klein";
+            return upper
+                ? { given: text.toLowerCase(), answer: text.toUpperCase() }
+                : { given: text.toUpperCase(), answer: text.toLowerCase() };
+        }
+
         // Geeft de oefening (met haakjes) en de juiste antwoorden.
         function sleepExercise() {
             const s = state.sleep;
@@ -1565,6 +1598,11 @@
             }
             const tokens = sleepTokens(s.text.trim(), sleepMode());
             const answers = [];
+            if (sleepIsPairs()) {
+                const pairs = tokens.filter((t) => t.type === "unit").map((t) => sleepPair(t.text));
+                pairs.forEach((pair) => answers.push(pair.answer));
+                return { oef: pairs.map((pair) => `${pair.given}[${pair.answer}]`).join(" "), answers };
+            }
             const oef = tokens.map((token) => {
                 if (token.type === "unit" && s.gaps.includes(token.index)) {
                     answers.push(token.text);
@@ -1606,8 +1644,16 @@
                         <button data-mode="woorden">Woorden</button>
                         <button data-mode="letters">Letters</button>
                         <button data-mode="getallen">Getallen</button>
+                        <button data-mode="koppels">Koppels</button>
                     </div>
                     <p class="hint" id="s-mode-hint"></p>
+                    <div id="s-richting-box" class="hidden" style="margin-top:10px">
+                        <div class="label">De cursist sleept</div>
+                        <div class="segment" role="group" aria-label="De cursist sleept" id="s-richting">
+                            <button data-richting="groot">Hoofdletters</button>
+                            <button data-richting="klein">Kleine letters</button>
+                        </div>
+                    </div>
                 </div>
                 <div class="label" id="s-tiles-label">Welke letters wil je weglaten?</div>
                 <div class="tiles" id="s-tiles"></div>
@@ -1620,6 +1666,10 @@
                 <p class="hint" style="margin:-2px 0 8px">(De oranje kaartjes zijn het juiste antwoord en verschijnen altijd als optie.)</p>
                 <div class="chips" id="s-cards"></div>
                 <div class="mini-actions"><button class="mini" data-s="shuffle">Andere volgorde</button></div>
+                <div id="s-punct" class="hidden" style="margin:6px 0 4px">
+                    <div class="hint" style="margin-bottom:4px">Extra leestekens:</div>
+                    <div class="chips" id="s-punct-chips"></div>
+                </div>
                     <div class="add-row">
                     <input type="text" id="s-own" placeholder="Typ klanken, gescheiden door komma's" autocomplete="off" autocapitalize="off">
                     <button class="btn light" data-s="own">Toevoegen</button>
@@ -1691,6 +1741,9 @@
                 s.gaps = s.gaps.includes(index)
                     ? s.gaps.filter((x) => x !== index)
                     : [...s.gaps, index].sort((a, b) => a - b);
+            } else if (data.richting) {
+                s.richting = data.richting;
+                s.extras = [];
             } else if (data.mode) {
                 if (data.mode !== s.mode) {
                     s.mode = data.mode;
@@ -1700,9 +1753,12 @@
                         s.elkwoord = true;
                         $("#s-elkwoord").checked = true;
                     }
+                    // Van of naar koppels: eigen extra kaartjes passen niet meer.
+                    if (data.mode === "koppels" || s.extras.some((x) => /[A-Z]/.test(x))) s.extras = [];
                 }
             } else if (data.s === "all") {
-                s.gaps = units.map((unit) => unit.index);
+                // Alles: zonder de leestekens.
+                s.gaps = units.filter((unit) => !unit.punct).map((unit) => unit.index);
             } else if (data.s === "none") {
                 s.gaps = [];
             } else if (data.s === "shuffle") {
@@ -1734,19 +1790,35 @@
             });
             $("#s-tiles-label").classList.toggle("hidden", raw);
             const numbers = sleepIsNumbers();
-            $("#s-tiles-label").textContent = numbers
+            const pairs = sleepIsPairs();
+            $("#s-richting-box").classList.toggle("hidden", !pairs);
+            document.querySelectorAll("#s-richting button").forEach((button) => {
+                button.setAttribute("aria-pressed", String(button.dataset.richting === (s.richting || "groot")));
+            });
+            $("#s-tiles-label").textContent = pairs
+                ? "Zo ziet de cursist het:"
+                : numbers
                 ? "Welke getallen wil je weglaten?"
                 : sentence && sleepMode() === "woorden"
                     ? "Welke woorden wil je weglaten?"
                     : "Welke letters wil je weglaten?";
             $("#s-own").placeholder = numbers
                 ? "Typ getallen, gescheiden door komma's"
-                : "Typ klanken, gescheiden door komma's";
+                : pairs
+                    ? (s.richting === "klein" ? "Typ extra kleine letters, bv. b, d" : "Typ extra hoofdletters, bv. B, D")
+                    : "Typ klanken, gescheiden door komma's";
             $("#s-mode-hint").textContent = numbers
                 ? "Elk getal komt in een eigen wit vakje. De opnames komen uit de map getallen (0 tot 100)."
-                : "";
+                : pairs
+                    ? "Typ de letters met een spatie ertussen, bv. a e o i u. Elke letter staat in een wit vakje met een invulvakje eronder."
+                    : "";
             // Luisterknop boven elk woord: alleen bij een zin of getallen.
             $("#s-elkwoord-box").classList.toggle("hidden", !sentence);
+            $("#s-elkwoord-box").classList.toggle("hidden", !sentence || pairs);
+            const klankTitle = $("#s-klank").closest(".switch").querySelector("span:last-child");
+            if (klankTitle && klankTitle.firstChild) {
+                klankTitle.firstChild.textContent = pairs ? "Luisterknop boven elk paar" : "Luisterknop boven elk vakje";
+            }
             const elkTitle = $("#s-elkwoord-box .switch > span:last-child");
             if (elkTitle && elkTitle.firstChild) {
                 elkTitle.firstChild.textContent = numbers
@@ -1754,12 +1826,20 @@
                     : "Luisterknop boven elk woord";
             }
             // Audio van de hele reeks bestaat niet bij getallen.
-            $("#s-woord-box").classList.toggle("hidden", numbers);
-            $("#s-luister-box").classList.toggle("hidden", numbers);
-            $("#s-tile-actions").classList.toggle("hidden", raw);
+            $("#s-woord-box").classList.toggle("hidden", numbers || pairs);
+            $("#s-luister-box").classList.toggle("hidden", numbers || pairs);
+            $("#s-tile-actions").classList.toggle("hidden", raw || pairs);
 
             if (raw) {
                 $("#s-tiles").innerHTML = `<span class="empty">Je typte zelf haakjes: die worden gebruikt zoals ze staan.</span>`;
+            } else if (pairs) {
+                const units = sleepTokens(s.text.trim(), "koppels").filter((t) => t.type === "unit");
+                $("#s-tiles").innerHTML = units.length
+                    ? units.map((unit) => {
+                        const pair = sleepPair(unit.text);
+                        return `<span class="pair-preview"><span class="sep">${escapeHtml(pair.given)}</span><span class="chip answer">${escapeHtml(pair.answer)}</span></span>`;
+                    }).join("")
+                    : `<span class="empty">Typ eerst de letters, bv. a e o i u.</span>`;
             } else {
                 const tokens = sleepTokens(s.text.trim(), sleepMode());
                 $("#s-tiles").innerHTML = tokens.length
@@ -1769,7 +1849,7 @@
                                 ? `<span class="space"></span>`
                                 : `<span class="sep">${escapeHtml(token.text)}</span>`;
                         }
-                        return `<button class="tile" data-gap="${token.index}"
+                        return `<button class="tile${token.punct ? " punct" : ""}" data-gap="${token.index}"
                             aria-pressed="${s.gaps.includes(token.index)}">${escapeHtml(token.text)}</button>`;
                     }).join("")
                     : `<span class="empty">Typ eerst een woord of een zin.</span>`;
@@ -1784,7 +1864,15 @@
                 : `<span class="hint">Nog geen kaartjes.</span>`;
 
             // Klankknoppen alleen bij letters; bij woorden typ je zelf.
-            const showPalette = !(sentence && ["woorden", "getallen"].includes(sleepMode())) && !raw;
+            const showPalette = !(sentence && ["woorden", "getallen", "koppels"].includes(sleepMode())) && !raw;
+            // Een leesteken als antwoord: de andere leestekens staan klaar
+            // als extra kaartjes (een komma kun je niet typen in het vak).
+            const punctAnswer = answers.some((a) => PUNCTUATION.includes(a));
+            $("#s-punct").classList.toggle("hidden", !punctAnswer);
+            $("#s-punct-chips").innerHTML = punctAnswer
+                ? PUNCTUATION.filter((p) => !answers.includes(p)).map((p) => `<button class="chip" data-card="${escapeHtml(p)}"
+                    aria-pressed="${s.order.includes(p)}">${escapeHtml(p)}</button>`).join("")
+                : "";
             $("#s-palette").innerHTML = showPalette
                 ? `<details style="margin-top:10px"><summary class="hint" style="cursor:pointer">Of selecteer hier extra klanken</summary>
                     ${paletteHtml(s.order, "card")}</details>`
@@ -1807,15 +1895,19 @@
             const { oef, answers } = sleepExercise();
             if (!answers.length) return { problem: "Tik minstens één stukje aan dat een vakje wordt." };
             const warning = "";
-            let url = `${TOOLS.sleep.base}?oef=${enc(oef)}&keuzes=${s.order.map(enc).join(",")}`;
+            // Is een komma of puntkomma zelf een kaartje, dan scheidt een |.
+            const separator = s.order.some((card) => /[,;]/.test(card)) ? "|" : ",";
+            let url = `${TOOLS.sleep.base}?oef=${enc(oef)}&keuzes=${s.order.map(enc).join(separator)}`;
             if (s.mix) url += "&mix=ja";
             if (s.weg) url += "&weg=ja";
             const numbers = sleepIsNumbers();
+            const pairs = sleepIsPairs();
             if (numbers) url += "&soort=getal";
+            if (pairs) url += "&soort=koppel";
             if (s.klank) url += "&klank=ja";
-            if (s.elkwoord && sleepIsSentence()) url += "&elkwoord=ja";
-            if (s.woord && !numbers) url += "&woord=ja";
-            if (s.luister && !numbers) url += "&luister=ja";
+            if (s.elkwoord && sleepIsSentence() && !pairs) url += "&elkwoord=ja";
+            if (s.woord && !numbers && !pairs) url += "&woord=ja";
+            if (s.luister && !numbers && !pairs) url += "&luister=ja";
             url += textSizePart(s);
             return { url, warning };
         }
@@ -3416,6 +3508,8 @@
         function defaultHeight() {
             if (state.tool === "flitser") return 450;
             if (state.tool === "letterbord") return 650;
+            // Koppels staan op twee rijen (gegeven teken en invulvak): iets hoger.
+            if (state.tool === "sleep" && state.view === "klein" && sleepIsPairs()) return 260;
             return state.tool === "sleep" && state.view === "klein" ? 200 : 650;
         }
 
@@ -3619,8 +3713,23 @@
                 if (!oef) return "In deze sleeplink staat geen oefening (oef=).";
                 state.tool = "sleep";
                 const yes = (name) => ["ja", "j", "yes", "1", "true", "waar"].includes(get(name).toLowerCase());
-                const parsed = sleepFromBrackets(oef, ["getal", "getallen"].includes(get("soort").toLowerCase()));
-                const keuzes = splitList(get("keuzes"));
+                const soort = get("soort").toLowerCase();
+                let parsed = sleepFromBrackets(oef, ["getal", "getallen"].includes(soort));
+                if (["koppel", "koppels"].includes(soort)) {
+                    // a[A] e[E] wordt: letters a e, kaartjes in hoofdletters.
+                    const found = [...oef.matchAll(/(\S*?)\[([^\]]*)\]/g)];
+                    const firstAnswer = found.length ? found[0][2] : "";
+                    parsed = {
+                        text: found.map((m) => m[1] || m[2]).join(" "),
+                        mode: "koppels",
+                        gaps: [],
+                        richting: firstAnswer && firstAnswer === firstAnswer.toLowerCase() ? "klein" : "groot",
+                    };
+                }
+                const keuzesRaw = get("keuzes");
+                const keuzes = keuzesRaw.includes("|")
+                    ? keuzesRaw.split("|").map((x) => x.trim()).filter(Boolean)
+                    : splitList(keuzesRaw);
                 state.sleep = Object.assign(fresh.sleep, parsed, {
                     order: [],
                     extras: [],
