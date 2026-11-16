@@ -486,6 +486,19 @@
             font-size: 0.88rem;
         }
         .audio-check .chips { margin-top: 6px; }
+        /* Suggesties: bestanden die lijken op wat niet gevonden werd. */
+        .suggest { margin-top: 6px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+        .suggest-label { color: var(--muted); font-size: 0.88rem; }
+        .suggest-item { display: inline-flex; align-items: center; gap: 2px; }
+        .suggest-item .pick {
+            display: inline-flex; align-items: center; gap: 6px;
+            border: 2px solid var(--teal); background: #fff; color: var(--teal-dark);
+            border-radius: 999px; padding: 2px 10px; font-size: 0.9rem; cursor: pointer;
+        }
+        .suggest-item .pick:hover { background: var(--teal-soft); }
+        .suggest-item .pick img { width: 28px; height: 28px; object-fit: contain; border-radius: 4px; }
+        .media-row { margin-top: 8px; }
+        .media-row + .media-row { border-top: 1px dashed var(--line); padding-top: 8px; }
         .audio-check .chip { font-size: 0.92rem; padding: 2px 10px; }
         .audio-check .chip.no-audio { border-color: var(--ligo-orange); background: var(--ligo-pink); }
         .audio-check span.chip { cursor: default; }
@@ -2264,26 +2277,24 @@
                     box.dataset.key = "";
                     return;
                 }
-                const parts = [];
-                if (images.length) {
-                    parts.push(missingImages.length
-                        ? `<div><span class="missing">Niet gevonden:</span> ${missingImages.length} van de ${images.length} afbeeldingen.
-                            ${uploadReady ? `<span class="hint" style="display:inline">Tik een naam aan om de afbeelding toe te voegen.</span>` : ""}
-                            <div class="chips">${missingImages.map((name) => uploadReady
-                                ? `<button type="button" class="chip no-audio" data-add-image="${escapeHtml(name)}">+ ${escapeHtml(name)}</button>`
-                                : `<span class="chip no-audio">${escapeHtml(name)}</span>`).join("")}</div></div>`
-                        : `<div><span class="found">Alle ${images.length} afbeeldingen gevonden.</span></div>`);
-                }
-                if (sounds.length) {
-                    parts.push(missingSounds.length
-                        ? `<div style="margin-top:8px"><span class="missing">Niet gevonden:</span> ${missingSounds.length} van de ${sounds.length} opnames.
-                            ${uploadReady ? `<span class="hint" style="display:inline">Tik een woord aan om een opname toe te voegen.</span>` : ""}
-                            <div class="chips">${missingSounds.map((name) => uploadReady
-                                ? `<button type="button" class="chip no-audio" data-add-kind="woord" data-add-name="${escapeHtml(name)}">+ ${escapeHtml(name)}</button>`
-                                : `<span class="chip no-audio">${escapeHtml(name)}</span>`).join("")}</div></div>`
-                        : `<div style="margin-top:8px"><span class="found">Alle ${sounds.length} opnames gevonden.</span></div>`);
-                }
-                box.innerHTML = parts.join("");
+                const summary = [];
+                if (images.length && !missingImages.length) summary.push(`Alle ${images.length} afbeeldingen gevonden.`);
+                if (sounds.length && !missingSounds.length) summary.push(`Alle ${sounds.length} opnames gevonden.`);
+                const missing = [
+                    ...missingImages.sort().map((name) => ({ kind: "beeld", name })),
+                    ...missingSounds.sort().map((name) => ({ kind: "woord", name })),
+                ];
+                box.innerHTML = (summary.length ? `<div><span class="found">${summary.join(" ")}</span></div>` : "")
+                    + missing.map((entry) => `<div class="media-row">
+                        <span class="missing">Niet gevonden:</span>
+                        ${entry.kind === "beeld" ? "afbeelding" : "opname"} <b>${escapeHtml(entry.name)}</b>
+                        ${uploadReady ? (entry.kind === "beeld"
+                            ? `<button type="button" class="add-audio" data-add-image="${escapeHtml(entry.name)}">+ Afbeelding toevoegen</button>`
+                            : `<button type="button" class="add-audio" data-add-kind="woord" data-add-name="${escapeHtml(entry.name)}">+ Opname toevoegen</button>`) : ""}
+                    </div>`).join("");
+                box.querySelectorAll(".media-row").forEach((row, index) => {
+                    addSuggestions(row, missing[index].kind, missing[index].name, "item", "");
+                });
             });
         }
 
@@ -3106,6 +3117,7 @@
                 } else if (result.state === "nee") {
                     box.innerHTML = `<span class="missing">Audio niet gevonden:</span> nog geen opname van ${what}.
                         ${addButtonHtml(kind, name, "+ Opname toevoegen", field)}`;
+                    addSuggestions(box, kind, name, "veld", key);
                 } else {
                     box.innerHTML = "";
                     box.dataset.key = "";
@@ -3248,6 +3260,7 @@
                 } else if (result.state === "nee") {
                     box.innerHTML = `<span class="missing">Niet gevonden:</span> nog geen afbeelding <b>${escapeHtml(value)}</b>.
                         ${addButton(value, "+ Afbeelding toevoegen")}`;
+                    addSuggestions(box, "beeld", value, "veld", key);
                 } else {
                     box.innerHTML = "";
                     box.dataset.key = "";
@@ -3328,6 +3341,159 @@
             if (add) {
                 event.preventDefault();
                 openUpload(add.dataset.addKind, add.dataset.addName, null, add.dataset.addField === "1");
+            }
+        });
+
+
+        // ---------- Suggesties voor wat niet gevonden wordt ----------
+        // Bestaat een afbeelding of opname niet, dan zoekt de pagina
+        // bestanden met een gelijkaardige naam (bv. 'katten' of 'kat-2' bij
+        // 'kat'). Eén klik kiest zo'n bestand.
+
+        function plainName(value) {
+            return String(value).toLowerCase()
+                .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+                .replace(/\.(mp3|m4a|wav|webp|jpe?g|png)$/i, "")
+                .replace(/[^a-z0-9]/g, "");
+        }
+
+        function editDistance(a, b) {
+            const row = Array.from({ length: b.length + 1 }, (_, i) => i);
+            for (let i = 1; i <= a.length; i += 1) {
+                let previous = row[0];
+                row[0] = i;
+                for (let j = 1; j <= b.length; j += 1) {
+                    const keep = row[j];
+                    row[j] = Math.min(row[j] + 1, row[j - 1] + 1, previous + (a[i - 1] === b[j - 1] ? 0 : 1));
+                    previous = keep;
+                }
+            }
+            return row[b.length];
+        }
+
+        // Hoe goed lijkt 'name' op 'query'? (Lager is beter; null = niet.)
+        function likeness(query, name) {
+            const q = plainName(query);
+            const n = plainName(name);
+            if (!q || !n || q === n) return null;
+            const distance = editDistance(q, n);
+            if (distance <= Math.max(1, Math.floor(q.length / 4))) return distance;
+            if (q.length >= 3 && (n.startsWith(q) || q.startsWith(n))) return 1 + Math.abs(n.length - q.length) / 10;
+            if (q.length >= 3 && n.includes(q)) return 2 + Math.abs(n.length - q.length) / 10;
+            // Begint grotendeels hetzelfde (kater en katten).
+            let common = 0;
+            while (common < q.length && common < n.length && q[common] === n[common]) common += 1;
+            if (common >= Math.max(3, Math.ceil(q.length * 0.6))) return 3 + (q.length - common) / 10;
+            return null;
+        }
+
+        // Alle bestaande bestanden waaruit gekozen kan worden.
+        async function suggestionPool(kind, query) {
+            const pool = [];
+            const add = (files, base) => (files || []).forEach((file) => {
+                pool.push({ name: withoutExtension(file), url: base + file.split("/").map(encodeURIComponent).join("/") });
+            });
+            if (kind === "beeld") {
+                add((await listFolder("assets", "afbeeldingen"))?.filter((f) => /\.(webp|jpe?g|png)$/i.test(f)), IMAGE_BASE);
+            } else {
+                const first = plainName(query).charAt(0);
+                if (first) add((await listFolder("assets", `audio/woorden/${first}`))?.filter((f) => /\.mp3$/i.test(f)), `${AUDIO_BASE}woorden/${first}/`);
+                add((await listFolder("assets", "audio/woorden/nonsens"))?.filter((f) => /\.mp3$/i.test(f)), `${AUDIO_BASE}woorden/nonsens/`);
+                add((await listFolder("assets", "audio/zinnen"))?.filter((f) => /\.mp3$/i.test(f)), `${AUDIO_BASE}zinnen/`);
+            }
+            return pool;
+        }
+
+        async function similarFiles(kind, query) {
+            const pool = await suggestionPool(kind, query);
+            const seen = new Set();
+            return pool
+                .map((file) => ({ ...file, score: likeness(query, file.name) }))
+                .filter((file) => file.score !== null && !seen.has(file.name) && seen.add(file.name))
+                .sort((a, b) => a.score - b.score || a.name.localeCompare(b.name, "nl"))
+                .slice(0, 6);
+        }
+
+        // Zet onder een 'Niet gevonden' de knoppen met gelijkaardige
+        // bestanden. 'target' zegt waar een keuze terechtkomt.
+        function addSuggestions(box, kind, query, target, key) {
+            const holder = document.createElement("div");
+            holder.className = "suggest";
+            box.appendChild(holder);
+            similarFiles(kind, query).then((files) => {
+                if (!document.body.contains(holder) || (key && box.dataset.key !== key) || !files.length) {
+                    holder.remove();
+                    return;
+                }
+                const data = (file) => `data-pick-kind="${kind}" data-pick-target="${escapeHtml(target)}"
+                    data-pick-from="${escapeHtml(query)}" data-pick-name="${escapeHtml(file.name)}"`;
+                holder.innerHTML = `<span class="suggest-label">Wel gevonden, lijkt erop (klik om te kiezen):</span>`
+                    + files.map((file) => kind === "beeld"
+                        ? `<span class="suggest-item"><button type="button" class="pick" ${data(file)}
+                            title="Deze afbeelding kiezen"><img src="${escapeHtml(file.url)}" alt="">${escapeHtml(file.name)}</button></span>`
+                        : `<span class="suggest-item"><button type="button" class="pick" ${data(file)}
+                            title="Deze opname kiezen">${escapeHtml(file.name)}</button><button type="button" class="play"
+                            data-play="${escapeHtml(file.url)}" aria-label="Beluisteren">▶</button></span>`).join("");
+            });
+        }
+
+        // Koppelen en sorteren: één item laten verwijzen naar een ander
+        // bestand, bv. 'kat' met afbeelding 'katten' wordt 'kat~b:katten'.
+        function pointItemTo(text, look, kind, from, name, luister) {
+            return itemList(text).map((item) => {
+                const spec = itemSpec(item, look);
+                const parts = spec.split("~");
+                const prefix = kind === "beeld" ? "b:" : "g:";
+                const index = parts.findIndex((part) => part.toLowerCase().startsWith(prefix)
+                    && part.slice(2).trim().toLowerCase() === from.toLowerCase());
+                if (index >= 0) {
+                    parts[index] = prefix + name;
+                    return parts.join("~");
+                }
+                const words = parts.filter((part) => !/^[bg]:/i.test(part)).join(" ").trim();
+                if (kind === "geluid" && luister && words.toLowerCase() === from.toLowerCase()
+                    && !parts.some((part) => /^g:/i.test(part))) {
+                    return `${spec}~g:${name}`;
+                }
+                return item;
+            }).join(", ");
+        }
+
+        function pickSuggestion(button) {
+            const { pickKind: kind, pickTarget: target, pickFrom: from, pickName: name } = button.dataset;
+            if (target === "veld") {
+                if (kind === "beeld") {
+                    imageOwner().beeld = name;
+                    if ($("#m-beeld")) $("#m-beeld").value = name;
+                } else {
+                    fieldAudioOwner().audio = name;
+                    if ($("#m-audio")) $("#m-audio").value = name;
+                }
+                if (state.tool === "dictee") syncDictationMedia();
+                update();
+                return;
+            }
+            // Koppelen of sorteren.
+            const part = state[state.tool];
+            const soundKind = kind === "beeld" ? "beeld" : "geluid";
+            if (state.tool === "koppel") {
+                part.vast = pointItemTo(part.vast, part.vastAls, soundKind, from, name, part.luister);
+                part.kaart = pointItemTo(part.kaart, part.kaartAls, soundKind, from, name, part.luister);
+                part.extra = pointItemTo(part.extra, part.kaartAls, soundKind, from, name, part.luister);
+            } else {
+                part.groepen.forEach((group) => {
+                    group.kop = pointItemTo(group.kop, part.kopAls, soundKind, from, name, part.luister);
+                    group.kaarten = pointItemTo(group.kaarten, part.kaartAls, soundKind, from, name, part.luister);
+                });
+            }
+            renderTool();
+        }
+
+        document.addEventListener("click", (event) => {
+            const pick = event.target.closest("[data-pick-name]");
+            if (pick) {
+                event.preventDefault();
+                pickSuggestion(pick);
             }
         });
 
