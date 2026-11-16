@@ -301,8 +301,17 @@
             cursor: default;
         }
         .chip.removable::after { content: " ×"; opacity: 0.6; }
-        .pair-preview { display: inline-flex; flex-direction: column; align-items: center; gap: 4px; margin: 0 6px 6px 0; }
-        .pair-preview .sep { font-size: 1.2rem; }
+        /* Koppelen en sorteren */
+        .look-segment button { padding: 7px 10px; font-size: 0.92rem; }
+        .pair-list { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+        .pair-row { display: inline-flex; align-items: center; gap: 6px; }
+        .pair-row.incomplete .chip { border-style: dashed; opacity: 0.7; }
+        .pair-arrow { color: var(--muted); font-size: 0.82rem; }
+        .sort-group { border: 2px solid var(--line); border-radius: 14px; padding: 10px 12px 0; margin-bottom: 10px; }
+        .sort-group-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        .sort-group-fields { display: grid; grid-template-columns: minmax(80px, 1fr) minmax(0, 3fr); gap: 10px; }
+        .sort-group-fields label.field { margin-bottom: 10px; }
+        @media (max-width: 560px) { .sort-group-fields { grid-template-columns: 1fr; } }
         /* Dictee-reeks: woordknop met een klein kruisje ernaast. */
         .d-items { align-items: center; margin-bottom: 6px; }
         .d-item { display: inline-flex; align-items: stretch; }
@@ -541,6 +550,8 @@
                     <button class="tool" data-tool="sleep"><span class="ico"></span>Sleep<small>letters naar vakjes</small></button>
                     <button class="tool" data-tool="flitser"><span class="ico"></span>Flitser<small>letters of woorden flitsen</small></button>
                     <button class="tool" data-tool="letterbord"><span class="ico"></span>Letterbord<small>klikken, luisteren, schrijven</small></button>
+                    <button class="tool" data-tool="koppel"><span class="ico"></span>Koppelen<small>wat hoort bij elkaar?</small></button>
+                    <button class="tool" data-tool="sorteer"><span class="ico"></span>Sorteren<small>kaartjes in groepen</small></button>
                 </div>
                 <details class="load" style="margin-top:14px">
                     <summary>Een bestaande link aanpassen</summary>
@@ -697,6 +708,18 @@
                 base: `${ROOT}letterbord/`,
                 iframeTitle: "Letterlab letterbord",
             },
+            koppel: {
+                title: "Koppelen: wat hoort bij elkaar?",
+                repo: "koppel",
+                base: `${ROOT}koppel/`,
+                iframeTitle: "Letterlab koppelen",
+            },
+            sorteer: {
+                title: "Sorteren",
+                repo: "sorteer",
+                base: `${ROOT}sorteer/`,
+                iframeTitle: "Letterlab sorteren",
+            },
         };
 
         // Dezelfde klankgroepen als in de tools: de langste eerst.
@@ -793,7 +816,7 @@
                 },
                 klikklak: { positions: [[], [], []], woorden: true, uit: [], active: 0, onder: "audio" },
                 sleep: {
-                    text: "", mode: "letters", gaps: [], extras: [], order: [], richting: "groot",
+                    text: "", mode: "letters", gaps: [], extras: [], order: [],
                     mix: true, weg: true, klank: false, woord: false, luister: false,
                     elkwoord: false, grootte: 100,
                 },
@@ -803,6 +826,15 @@
                     grootte: 100,
                 },
                 letterbord: { rows: [[]], active: 0, modus: "schrijven", uitlijning: "midden", icoon: "" },
+                koppel: {
+                    vast: "", vastAls: "tekst", kaart: "", kaartAls: "tekst", extra: "",
+                    richting: "horizontaal", nakijken: "einde", luister: false, grootte: 100,
+                },
+                sorteer: {
+                    groepen: [{ kop: "", kaarten: "" }, { kop: "", kaarten: "" }],
+                    kopAls: "tekst", kaartAls: "tekst",
+                    richting: "horizontaal", nakijken: "einde", luister: false, grootte: 100,
+                },
             };
         }
 
@@ -811,7 +843,7 @@
             const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
             if (saved && saved.tool) {
                 state = Object.assign(freshState(), saved);
-                ["media", "dictee", "klikklak", "sleep", "flitser", "letterbord"].forEach((key) => {
+                ["media", "dictee", "klikklak", "sleep", "flitser", "letterbord", "koppel", "sorteer"].forEach((key) => {
                     state[key] = Object.assign(freshState()[key], saved[key] || {});
                 });
                 // Vroeger had het dictee maar één woord (word en missing).
@@ -836,6 +868,9 @@
                     state.sleep.luister = false;
                 }
             }
+            // De soort 'koppels' bestond even in de sleepoefening; die
+            // oefeningen maak je nu met de koppeltool.
+            if (state.sleep.mode === "koppels") state.sleep.mode = "woorden";
             state.standaard = 2;
         } catch {
             // Geen opslag beschikbaar: gewoon opnieuw beginnen.
@@ -1511,9 +1546,8 @@
 
         function sleepTokens(text, mode) {
             const tokens = [];
-            // Leestekens worden aantikbare stukjes, behalve bij getallen
-            // en koppels.
-            const punctUnits = !["getallen", "koppels"].includes(mode);
+            // Leestekens worden aantikbare stukjes, behalve bij getallen.
+            const punctUnits = mode !== "getallen";
             const pushSep = (sep) => {
                 if (!punctUnits) {
                     tokens.push({ type: "sep", text: sep });
@@ -1537,7 +1571,7 @@
                 const [, before, core, after] = match;
                 if (before) pushSep(before);
                 if (core) {
-                    if (mode === "woorden" || mode === "getallen" || mode === "koppels") {
+                    if (mode === "woorden" || mode === "getallen") {
                         tokens.push({ type: "unit", text: core });
                     } else {
                         graphemes(core).forEach((part) => {
@@ -1576,19 +1610,6 @@
             return sleepMode() === "getallen";
         }
 
-        function sleepIsPairs() {
-            return sleepMode() === "koppels" && !sleepIsRaw();
-        }
-
-        // Koppels: elk getypt teken krijgt de andere vorm (hoofdletter of
-        // kleine letter) als kaartje.
-        function sleepPair(text) {
-            const upper = state.sleep.richting !== "klein";
-            return upper
-                ? { given: text.toLowerCase(), answer: text.toUpperCase() }
-                : { given: text.toUpperCase(), answer: text.toLowerCase() };
-        }
-
         // Geeft de oefening (met haakjes) en de juiste antwoorden.
         function sleepExercise() {
             const s = state.sleep;
@@ -1598,11 +1619,6 @@
             }
             const tokens = sleepTokens(s.text.trim(), sleepMode());
             const answers = [];
-            if (sleepIsPairs()) {
-                const pairs = tokens.filter((t) => t.type === "unit").map((t) => sleepPair(t.text));
-                pairs.forEach((pair) => answers.push(pair.answer));
-                return { oef: pairs.map((pair) => `${pair.given}[${pair.answer}]`).join(" "), answers };
-            }
             const oef = tokens.map((token) => {
                 if (token.type === "unit" && s.gaps.includes(token.index)) {
                     answers.push(token.text);
@@ -1644,16 +1660,8 @@
                         <button data-mode="woorden">Woorden</button>
                         <button data-mode="letters">Letters</button>
                         <button data-mode="getallen">Getallen</button>
-                        <button data-mode="koppels">Koppels</button>
                     </div>
                     <p class="hint" id="s-mode-hint"></p>
-                    <div id="s-richting-box" class="hidden" style="margin-top:10px">
-                        <div class="label">De cursist sleept</div>
-                        <div class="segment" role="group" aria-label="De cursist sleept" id="s-richting">
-                            <button data-richting="groot">Hoofdletters</button>
-                            <button data-richting="klein">Kleine letters</button>
-                        </div>
-                    </div>
                 </div>
                 <div class="label" id="s-tiles-label">Welke letters wil je weglaten?</div>
                 <div class="tiles" id="s-tiles"></div>
@@ -1741,9 +1749,6 @@
                 s.gaps = s.gaps.includes(index)
                     ? s.gaps.filter((x) => x !== index)
                     : [...s.gaps, index].sort((a, b) => a - b);
-            } else if (data.richting) {
-                s.richting = data.richting;
-                s.extras = [];
             } else if (data.mode) {
                 if (data.mode !== s.mode) {
                     s.mode = data.mode;
@@ -1753,8 +1758,6 @@
                         s.elkwoord = true;
                         $("#s-elkwoord").checked = true;
                     }
-                    // Van of naar koppels: eigen extra kaartjes passen niet meer.
-                    if (data.mode === "koppels" || s.extras.some((x) => /[A-Z]/.test(x))) s.extras = [];
                 }
             } else if (data.s === "all") {
                 // Alles: zonder de leestekens.
@@ -1790,35 +1793,19 @@
             });
             $("#s-tiles-label").classList.toggle("hidden", raw);
             const numbers = sleepIsNumbers();
-            const pairs = sleepIsPairs();
-            $("#s-richting-box").classList.toggle("hidden", !pairs);
-            document.querySelectorAll("#s-richting button").forEach((button) => {
-                button.setAttribute("aria-pressed", String(button.dataset.richting === (s.richting || "groot")));
-            });
-            $("#s-tiles-label").textContent = pairs
-                ? "Zo ziet de cursist het:"
-                : numbers
+            $("#s-tiles-label").textContent = numbers
                 ? "Welke getallen wil je weglaten?"
                 : sentence && sleepMode() === "woorden"
                     ? "Welke woorden wil je weglaten?"
                     : "Welke letters wil je weglaten?";
             $("#s-own").placeholder = numbers
                 ? "Typ getallen, gescheiden door komma's"
-                : pairs
-                    ? (s.richting === "klein" ? "Typ extra kleine letters, bv. b, d" : "Typ extra hoofdletters, bv. B, D")
-                    : "Typ klanken, gescheiden door komma's";
+                : "Typ klanken, gescheiden door komma's";
             $("#s-mode-hint").textContent = numbers
                 ? "Elk getal komt in een eigen wit vakje. De opnames komen uit de map getallen (0 tot 100)."
-                : pairs
-                    ? "Typ de letters met een spatie ertussen, bv. a e o i u. Elke letter staat in een wit vakje met een invulvakje eronder."
-                    : "";
+                : "";
             // Luisterknop boven elk woord: alleen bij een zin of getallen.
             $("#s-elkwoord-box").classList.toggle("hidden", !sentence);
-            $("#s-elkwoord-box").classList.toggle("hidden", !sentence || pairs);
-            const klankTitle = $("#s-klank").closest(".switch").querySelector("span:last-child");
-            if (klankTitle && klankTitle.firstChild) {
-                klankTitle.firstChild.textContent = pairs ? "Luisterknop boven elk paar" : "Luisterknop boven elk vakje";
-            }
             const elkTitle = $("#s-elkwoord-box .switch > span:last-child");
             if (elkTitle && elkTitle.firstChild) {
                 elkTitle.firstChild.textContent = numbers
@@ -1826,20 +1813,12 @@
                     : "Luisterknop boven elk woord";
             }
             // Audio van de hele reeks bestaat niet bij getallen.
-            $("#s-woord-box").classList.toggle("hidden", numbers || pairs);
-            $("#s-luister-box").classList.toggle("hidden", numbers || pairs);
-            $("#s-tile-actions").classList.toggle("hidden", raw || pairs);
+            $("#s-woord-box").classList.toggle("hidden", numbers);
+            $("#s-luister-box").classList.toggle("hidden", numbers);
+            $("#s-tile-actions").classList.toggle("hidden", raw);
 
             if (raw) {
                 $("#s-tiles").innerHTML = `<span class="empty">Je typte zelf haakjes: die worden gebruikt zoals ze staan.</span>`;
-            } else if (pairs) {
-                const units = sleepTokens(s.text.trim(), "koppels").filter((t) => t.type === "unit");
-                $("#s-tiles").innerHTML = units.length
-                    ? units.map((unit) => {
-                        const pair = sleepPair(unit.text);
-                        return `<span class="pair-preview"><span class="sep">${escapeHtml(pair.given)}</span><span class="chip answer">${escapeHtml(pair.answer)}</span></span>`;
-                    }).join("")
-                    : `<span class="empty">Typ eerst de letters, bv. a e o i u.</span>`;
             } else {
                 const tokens = sleepTokens(s.text.trim(), sleepMode());
                 $("#s-tiles").innerHTML = tokens.length
@@ -1864,7 +1843,7 @@
                 : `<span class="hint">Nog geen kaartjes.</span>`;
 
             // Klankknoppen alleen bij letters; bij woorden typ je zelf.
-            const showPalette = !(sentence && ["woorden", "getallen", "koppels"].includes(sleepMode())) && !raw;
+            const showPalette = !(sentence && ["woorden", "getallen"].includes(sleepMode())) && !raw;
             // Een leesteken als antwoord: de andere leestekens staan klaar
             // als extra kaartjes (een komma kun je niet typen in het vak).
             const punctAnswer = answers.some((a) => PUNCTUATION.includes(a));
@@ -1901,15 +1880,411 @@
             if (s.mix) url += "&mix=ja";
             if (s.weg) url += "&weg=ja";
             const numbers = sleepIsNumbers();
-            const pairs = sleepIsPairs();
             if (numbers) url += "&soort=getal";
-            if (pairs) url += "&soort=koppel";
             if (s.klank) url += "&klank=ja";
-            if (s.elkwoord && sleepIsSentence() && !pairs) url += "&elkwoord=ja";
-            if (s.woord && !numbers && !pairs) url += "&woord=ja";
-            if (s.luister && !numbers && !pairs) url += "&luister=ja";
+            if (s.elkwoord && sleepIsSentence()) url += "&elkwoord=ja";
+            if (s.woord && !numbers) url += "&woord=ja";
+            if (s.luister && !numbers) url += "&luister=ja";
             url += textSizePart(s);
             return { url, warning };
+        }
+
+        // ============================================================
+        // 6c. KOPPELEN EN SORTEREN
+        // ------------------------------------------------------------
+        // Je typt woorden, letters of klanken met komma's ertussen en
+        // kiest hoe ze verschijnen: als tekst, afbeelding en/of geluid.
+        // De afbeelding en de opname hebben dezelfde naam als wat je typt
+        // (kat → afbeelding kat, opname kat). Wie iets anders wil, typt
+        // het item zelf: kat~b:poes (woord kat met afbeelding poes).
+        // ============================================================
+
+        const ITEM_LOOKS = [
+            { value: "tekst", label: "Tekst" },
+            { value: "beeld", label: "Afbeelding" },
+            { value: "tekstbeeld", label: "Tekst + afbeelding" },
+            { value: "geluid", label: "Alleen geluid" },
+            { value: "tekstgeluid", label: "Tekst + geluid" },
+        ];
+
+        // Losse klanken die al in assets/audio/klanken/ staan.
+        const KNOWN_SOUNDS = ["a", "aa", "b", "ch", "d", "e", "ee", "eu", "f", "g", "h", "i", "ie",
+            "ij", "ei", "j", "k", "l", "m", "n", "ng", "nk", "o", "oe", "oo", "ou", "p", "r", "s",
+            "sch", "sl", "sp", "st", "t", "u", "ui", "uu", "v", "w", "z"];
+
+        function isRawItem(value) {
+            return /~|^[bg]:/i.test(value);
+        }
+
+        // "kat" + "tekstbeeld" → "kat~b:kat"
+        function itemSpec(value, look) {
+            const text = value.trim();
+            if (!text || isRawItem(text)) return text;
+            const name = text.toLowerCase();
+            return {
+                tekst: text,
+                beeld: `b:${name}`,
+                tekstbeeld: `${text}~b:${name}`,
+                geluid: `g:${name}`,
+                tekstgeluid: `${text}~g:${name}`,
+            }[look] || text;
+        }
+
+        function itemList(value) {
+            return splitList(value.replace(/\n/g, ","));
+        }
+
+        // Een item uit de link terug omzetten: welke weergave hoort erbij?
+        function itemLook(spec) {
+            const parts = spec.split("~");
+            const text = parts.filter((p) => !/^[bg]:/i.test(p)).join(" ");
+            const image = (parts.find((p) => /^b:/i.test(p)) || "").slice(2);
+            const sound = (parts.find((p) => /^g:/i.test(p)) || "").slice(2);
+            const low = text.toLowerCase();
+            if (text && !image && !sound) return { look: "tekst", value: text };
+            if (!text && image && !sound) return { look: "beeld", value: image };
+            if (!text && !image && sound) return { look: "geluid", value: sound };
+            if (text && image === low && !sound) return { look: "tekstbeeld", value: text };
+            if (text && sound === low && !image) return { look: "tekstgeluid", value: text };
+            return { look: "", value: spec };
+        }
+
+        // Een lijst items uit de link → tekst voor het invulveld + weergave.
+        function fieldFromItems(specs) {
+            const parsed = specs.map(itemLook);
+            const looks = unique(parsed.map((item) => item.look));
+            if (looks.length === 1 && looks[0]) {
+                return { look: looks[0], text: parsed.map((item) => item.value).join(", ") };
+            }
+            return { look: "tekst", text: specs.join(", ") };
+        }
+
+        function encItem(spec) {
+            return encodeURIComponent(spec).replace(/%3A/gi, ":").replace(/%2F/gi, "/");
+        }
+
+        function lookSegmentHtml(id, current, label) {
+            return `<div class="label" style="margin-top:4px">${label}</div>
+                <div class="segment look-segment" role="group" aria-label="${label}" id="${id}">
+                    ${ITEM_LOOKS.map((look) => `<button data-look="${look.value}" aria-pressed="${look.value === current}">${look.label}</button>`).join("")}
+                </div>`;
+        }
+
+        function optionsHtml(prefix, part) {
+            return `<div class="label" style="margin-top:18px">Opstelling</div>
+                <div class="segment" role="group" aria-label="Opstelling" id="${prefix}-richting">
+                    <button data-richting="horizontaal" aria-pressed="${part.richting !== "verticaal"}">Horizontaal</button>
+                    <button data-richting="verticaal" aria-pressed="${part.richting === "verticaal"}">Verticaal</button>
+                </div>
+                <p class="hint" id="${prefix}-richting-hint"></p>
+                <div class="label" style="margin-top:14px">Nakijken</div>
+                <div class="segment" role="group" aria-label="Nakijken" id="${prefix}-nakijken">
+                    <button data-nakijken="einde" aria-pressed="${part.nakijken !== "meteen"}">Als alles geplaatst is</button>
+                    <button data-nakijken="meteen" aria-pressed="${part.nakijken === "meteen"}">Meteen per kaartje</button>
+                </div>
+                <p class="hint">${part.nakijken === "meteen"
+                    ? "Een fout kaartje schudt en springt terug."
+                    : "Foute kaartjes worden rood, daarna kan de cursist ze verplaatsen."}</p>
+                <div class="switches" style="margin-top:14px">
+                    ${switchHtml(`${prefix}-luister`, "Woorden en letters laten horen bij tikken",
+                        "Ook zonder gekozen geluid: de opname van het woord of de klank, als die bestaat.", part.luister)}
+                </div>
+                ${textSizeHtml(`${prefix}-grootte`, TEXT_SIZES.slice(0, 2), "Kleiner als je rondom meer ruimte wilt. Groter dan wat past, kan niet.")}
+                <div class="audio-check" id="${prefix}-media-check" style="margin-top:14px"></div>`;
+        }
+
+        // Gemeenschappelijke knoppen: weergave, opstelling, nakijken.
+        function bindOptions(prefix, part, rerender) {
+            $("#form").addEventListener("click", (event) => {
+                const button = event.target.closest("button");
+                if (!button) return;
+                const look = button.dataset.look;
+                const group = button.closest(".look-segment");
+                if (look && group) {
+                    part[group.dataset.key] = look;
+                } else if (button.dataset.richting) {
+                    part.richting = button.dataset.richting;
+                } else if (button.dataset.nakijken) {
+                    part.nakijken = button.dataset.nakijken;
+                } else if (!rerender(button)) {
+                    return;
+                }
+                renderTool();
+            });
+            $(`#${prefix}-luister`).addEventListener("change", (event) => {
+                part.luister = event.target.checked;
+                update();
+            });
+            bindTextSize(`${prefix}-grootte`, part);
+        }
+
+        function optionsPart(part) {
+            let url = "";
+            if (part.richting === "verticaal") url += "&richting=verticaal";
+            if (part.nakijken === "meteen") url += "&nakijken=meteen";
+            if (part.luister) url += "&luister=ja";
+            url += textSizePart(part);
+            return url;
+        }
+
+        // ---------- Koppelen ----------
+
+        function renderPairForm() {
+            const k = state.koppel;
+            $("#form").innerHTML = `
+                <p class="hint" style="margin:0 0 12px">Typ wat bij elkaar hoort, met komma's ertussen. Het eerste kaartje hoort bij het eerste vaste item, het tweede bij het tweede, enzovoort.</p>
+                <label class="field">
+                    <span>Vaste items (met een leeg vakje)</span>
+                    <input type="text" id="ko-vast" class="big-input" value="${escapeHtml(k.vast)}"
+                        autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="bv. a, e, o, i, u">
+                </label>
+                <div id="ko-vast-look"></div>
+                <label class="field" style="margin-top:16px">
+                    <span>Juiste kaartjes, in dezelfde volgorde</span>
+                    <input type="text" id="ko-kaart" class="big-input" value="${escapeHtml(k.kaart)}"
+                        autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="bv. A, E, O, I, U">
+                    <div class="mini-actions">
+                        <button class="mini" type="button" data-fill="groot">Hoofdletters van de vaste items</button>
+                        <button class="mini" type="button" data-fill="klein">Kleine letters van de vaste items</button>
+                        <button class="mini" type="button" data-fill="zelfde">Hetzelfde als de vaste items</button>
+                    </div>
+                </label>
+                <div id="ko-kaart-look"></div>
+                <div class="label" style="margin-top:16px">Zo hoort het bij elkaar</div>
+                <div id="ko-pairs" class="pair-list"></div>
+                <label class="field" style="margin-top:16px">
+                    <span>Extra kaartjes (horen nergens bij)</span>
+                    <input type="text" id="ko-extra" value="${escapeHtml(k.extra)}"
+                        autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Niet verplicht, bv. B, D">
+                    <p class="hint">Krijgen dezelfde weergave als de juiste kaartjes.</p>
+                </label>
+                <p class="hint">Andere afbeelding of opname dan het woord zelf? Typ dan bv. <b>kat~b:poes</b> (woord kat met afbeelding poes) of <b>g:k</b> (luisterknop met de klank k).</p>
+                ${optionsHtml("ko", k)}`;
+            $("#ko-vast-look").innerHTML = lookSegmentHtml("ko-vast-als", k.vastAls, "Vaste items tonen als");
+            $("#ko-vast-als").dataset.key = "vastAls";
+            $("#ko-kaart-look").innerHTML = lookSegmentHtml("ko-kaart-als", k.kaartAls, "Kaartjes tonen als");
+            $("#ko-kaart-als").dataset.key = "kaartAls";
+            $("#ko-richting-hint").textContent = k.richting === "verticaal"
+                ? "Vaste items onder elkaar, het vakje ernaast. Op een breed scherm staan de kaartjes rechts."
+                : "Vaste items naast elkaar, het vakje eronder.";
+
+            ["vast", "kaart", "extra"].forEach((key) => {
+                $(`#ko-${key}`).addEventListener("input", (event) => {
+                    k[key] = event.target.value;
+                    refreshPairs();
+                    update();
+                });
+            });
+            bindOptions("ko", k, (button) => {
+                const fill = button.dataset.fill;
+                if (!fill) return false;
+                const items = itemList(k.vast);
+                k.kaart = items.map((item) => (fill === "groot" ? item.toUpperCase()
+                    : fill === "klein" ? item.toLowerCase() : item)).join(", ");
+                return true;
+            });
+            refreshPairs();
+        }
+
+        function refreshPairs() {
+            const k = state.koppel;
+            const vast = itemList(k.vast);
+            const kaart = itemList(k.kaart);
+            const rows = Math.max(vast.length, kaart.length);
+            if (!rows) {
+                $("#ko-pairs").innerHTML = `<span class="hint">Nog niets ingevuld.</span>`;
+                return;
+            }
+            $("#ko-pairs").innerHTML = Array.from({ length: rows }, (_, i) => `
+                <span class="pair-row${vast[i] && kaart[i] ? "" : " incomplete"}">
+                    <span class="chip">${escapeHtml(vast[i] || "?")}</span>
+                    <span class="pair-arrow">hoort bij</span>
+                    <span class="chip answer">${escapeHtml(kaart[i] || "?")}</span>
+                </span>`).join("");
+        }
+
+        function pairExercise() {
+            const k = state.koppel;
+            const vast = itemList(k.vast).map((item) => itemSpec(item, k.vastAls));
+            const kaart = itemList(k.kaart).map((item) => itemSpec(item, k.kaartAls));
+            const extra = itemList(k.extra).map((item) => itemSpec(item, k.kaartAls));
+            return { vast, kaart, extra };
+        }
+
+        function pairLink() {
+            const { vast, kaart, extra } = pairExercise();
+            if (!vast.length) return { problem: "Typ de vaste items." };
+            if (!kaart.length) return { problem: "Typ de juiste kaartjes." };
+            if (vast.length !== kaart.length) {
+                return { problem: `Er zijn ${vast.length} vaste items en ${kaart.length} kaartjes. Dat moet evenveel zijn.` };
+            }
+            let url = `${TOOLS.koppel.base}?vast=${vast.map(encItem).join("|")}&kaart=${kaart.map(encItem).join("|")}`;
+            if (extra.length) url += `&extra=${extra.map(encItem).join("|")}`;
+            url += optionsPart(state.koppel);
+            const warning = vast.length > 8 ? "Veel paren: de kaartjes worden klein. Verdeel ze eventueel over twee oefeningen." : "";
+            return { url, warning };
+        }
+
+        // ---------- Sorteren ----------
+
+        function renderSortForm() {
+            const so = state.sorteer;
+            $("#form").innerHTML = `
+                <p class="hint" style="margin:0 0 12px">Geef elke groep een kop en typ de kaartjes die erbij horen, met komma's ertussen. De kaartjes staan in de oefening door elkaar.</p>
+                <div id="so-groups"></div>
+                <div class="mini-actions" style="margin-bottom:14px">
+                    <button class="mini" type="button" data-group="add"${so.groepen.length >= 4 ? " disabled" : ""}>+ Groep</button>
+                </div>
+                <div id="so-kop-look"></div>
+                <div id="so-kaart-look" style="margin-top:12px"></div>
+                <p class="hint" style="margin-top:10px">Andere afbeelding of opname dan het woord zelf? Typ dan bv. <b>kat~b:poes</b> of <b>g:k</b>.</p>
+                ${optionsHtml("so", so)}`;
+            $("#so-groups").innerHTML = so.groepen.map((group, index) => `
+                <div class="sort-group">
+                    <div class="sort-group-head">
+                        <b>Groep ${index + 1}</b>
+                        ${so.groepen.length > 2 ? `<button class="mini" type="button" data-group="remove" data-index="${index}">Weghalen</button>` : ""}
+                    </div>
+                    <div class="sort-group-fields">
+                        <label class="field"><span>Kop</span>
+                            <input type="text" data-kop="${index}" value="${escapeHtml(group.kop)}" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="bv. ${["k", "d", "m", "s"][index]}">
+                        </label>
+                        <label class="field"><span>Kaartjes</span>
+                            <input type="text" data-kaarten="${index}" value="${escapeHtml(group.kaarten)}" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="bv. ${["kat, kip, kam", "das, dak, doos", "maan, mus", "sok, zon"][index]}">
+                        </label>
+                    </div>
+                </div>`).join("");
+            $("#so-kop-look").innerHTML = lookSegmentHtml("so-kop-als", so.kopAls, "Koppen tonen als");
+            $("#so-kop-als").dataset.key = "kopAls";
+            $("#so-kaart-look").innerHTML = lookSegmentHtml("so-kaart-als", so.kaartAls, "Kaartjes tonen als");
+            $("#so-kaart-als").dataset.key = "kaartAls";
+            $("#so-richting-hint").textContent = so.richting === "verticaal"
+                ? "Groepen onder elkaar, de kaartjes komen ernaast."
+                : "Groepen naast elkaar, de kaartjes komen eronder.";
+
+            $("#so-groups").addEventListener("input", (event) => {
+                const kop = event.target.dataset.kop;
+                const kaarten = event.target.dataset.kaarten;
+                if (kop !== undefined) so.groepen[Number(kop)].kop = event.target.value;
+                if (kaarten !== undefined) so.groepen[Number(kaarten)].kaarten = event.target.value;
+                update();
+            });
+            bindOptions("so", so, (button) => {
+                if (button.dataset.group === "add" && so.groepen.length < 4) {
+                    so.groepen.push({ kop: "", kaarten: "" });
+                    return true;
+                }
+                if (button.dataset.group === "remove" && so.groepen.length > 2) {
+                    so.groepen.splice(Number(button.dataset.index), 1);
+                    return true;
+                }
+                return false;
+            });
+        }
+
+        function sortExercise() {
+            const so = state.sorteer;
+            return so.groepen.map((group) => ({
+                kop: itemSpec(group.kop.trim(), so.kopAls),
+                kaarten: itemList(group.kaarten).map((item) => itemSpec(item, so.kaartAls)),
+            }));
+        }
+
+        function sortLink() {
+            const groups = sortExercise();
+            const filled = groups.filter((group) => group.kop || group.kaarten.length);
+            if (filled.length < 2) return { problem: "Vul minstens twee groepen in." };
+            if (filled.some((group) => !group.kop)) return { problem: "Geef elke groep een kop." };
+            if (filled.some((group) => !group.kaarten.length)) return { problem: "Typ bij elke groep minstens één kaartje." };
+            let url = `${TOOLS.sorteer.base}?groep=${filled.map((group) => encItem(group.kop)).join("|")}`;
+            filled.forEach((group, index) => {
+                url += `&g${index + 1}=${group.kaarten.map(encItem).join("|")}`;
+            });
+            url += optionsPart(state.sorteer);
+            const total = filled.reduce((sum, group) => sum + group.kaarten.length, 0);
+            const warning = total > 12 ? "Veel kaartjes: ze worden klein. Verdeel ze eventueel over twee oefeningen." : "";
+            return { url, warning };
+        }
+
+        // ---------- Afbeeldingen en opnames nakijken ----------
+
+        function itemMedia(specs) {
+            const images = [];
+            const sounds = [];
+            const luister = state[state.tool].luister;
+            specs.forEach((spec) => {
+                const parts = spec.split("~");
+                const text = parts.filter((p) => !/^[bg]:/i.test(p)).join(" ").trim();
+                parts.forEach((part) => {
+                    if (/^b:/i.test(part)) images.push(part.slice(2).trim());
+                    if (/^g:/i.test(part)) sounds.push(part.slice(2).trim());
+                });
+                if (luister && text && !parts.some((p) => /^g:/i.test(p))) sounds.push(text);
+            });
+            const isPlain = (name) => name && !/^(https?:)?\/\//i.test(name) && !name.includes("/");
+            return {
+                images: unique(images.filter(isPlain).map((name) => name.replace(/\.(webp|jpe?g|png)$/i, ""))),
+                sounds: unique(sounds.filter(isPlain).map((name) => name.toLowerCase().replace(/\.mp3$/i, ""))
+                    .filter((name) => !KNOWN_SOUNDS.includes(name) && isWordForAudio(name))),
+            };
+        }
+
+        function showMediaCheck() {
+            const box = $(`#${state.tool === "koppel" ? "ko" : "so"}-media-check`);
+            if (!box) return;
+            const specs = state.tool === "koppel"
+                ? Object.values(pairExercise()).flat()
+                : sortExercise().flatMap((group) => [group.kop, ...group.kaarten]);
+            const { images, sounds } = itemMedia(specs.filter(Boolean));
+            const key = `${images.join(",")}|${sounds.join(",")}|${uploadReady}`;
+            if (box.dataset.key === key) return;
+            box.dataset.key = key;
+            if (!images.length && !sounds.length) {
+                box.innerHTML = "";
+                return;
+            }
+            box.innerHTML = `<span class="busy">Afbeeldingen en opnames zoeken…</span>`;
+            const missingImages = [];
+            const missingSounds = [];
+            let unknown = false;
+            Promise.all([
+                ...images.map(async (name) => {
+                    const result = await lookupImage(name);
+                    if (result.state === "nee") missingImages.push(name);
+                    if (result.state === "onbekend") unknown = true;
+                }),
+                lookupMany(sounds.map((name) => ({ kind: "woord", name })), (entry, result) => {
+                    if (result.state === "nee") missingSounds.push(entry.name);
+                    if (result.state === "onbekend") unknown = true;
+                }),
+            ]).then(() => {
+                if (box.dataset.key !== key) return;
+                if (unknown) {
+                    box.innerHTML = "";
+                    box.dataset.key = "";
+                    return;
+                }
+                const parts = [];
+                if (images.length) {
+                    parts.push(missingImages.length
+                        ? `<div><span class="missing">Niet gevonden:</span> ${missingImages.length} van de ${images.length} afbeeldingen.
+                            ${uploadReady ? `<span class="hint" style="display:inline">Tik een naam aan om de afbeelding toe te voegen.</span>` : ""}
+                            <div class="chips">${missingImages.map((name) => uploadReady
+                                ? `<button type="button" class="chip no-audio" data-add-image="${escapeHtml(name)}">+ ${escapeHtml(name)}</button>`
+                                : `<span class="chip no-audio">${escapeHtml(name)}</span>`).join("")}</div></div>`
+                        : `<div><span class="found">Alle ${images.length} afbeeldingen gevonden.</span></div>`);
+                }
+                if (sounds.length) {
+                    parts.push(missingSounds.length
+                        ? `<div style="margin-top:8px"><span class="missing">Niet gevonden:</span> ${missingSounds.length} van de ${sounds.length} opnames.
+                            ${uploadReady ? `<span class="hint" style="display:inline">Tik een woord aan om een opname toe te voegen.</span>` : ""}
+                            <div class="chips">${missingSounds.map((name) => uploadReady
+                                ? `<button type="button" class="chip no-audio" data-add-kind="woord" data-add-name="${escapeHtml(name)}">+ ${escapeHtml(name)}</button>`
+                                : `<span class="chip no-audio">${escapeHtml(name)}</span>`).join("")}</div></div>`
+                        : `<div style="margin-top:8px"><span class="found">Alle ${sounds.length} opnames gevonden.</span></div>`);
+                }
+                box.innerHTML = parts.join("");
+            });
         }
 
         // ============================================================
@@ -2487,7 +2862,7 @@
             box.classList.toggle("hidden", !volledig && !withAudioOnly);
             if (!volledig && !withAudioOnly) return;
             const m = state.media;
-            const withImage = tool !== "klikklak";
+            const withImage = !["klikklak", "koppel", "sorteer"].includes(tool);
 
             if (withAudioOnly) {
                 box.innerHTML = audioFieldHtml(m);
@@ -2579,7 +2954,7 @@
             if (m.instructie) part += `&instructie=${enc(m.instructie)}`;
             if (state.tool === "dictee") {
                 part += dictationMediaPart();
-            } else if (state.tool !== "klikklak") {
+            } else if (!["klikklak", "koppel", "sorteer"].includes(state.tool)) {
                 if (m.beeld) part += `&beeld=${enc(m.beeld)}`;
                 if (m.audio) part += `&audio=${enc(m.audio)}`;
             }
@@ -2909,6 +3284,8 @@
                 } else {
                     showSingleCheck(box, sentence ? "zin" : "woord", sentence ? text : word);
                 }
+            } else if (tool === "koppel" || tool === "sorteer") {
+                showMediaCheck();
             } else if (tool === "flitser") {
                 const box = $("#f-woorden-audio");
                 if (!box) return;
@@ -3359,6 +3736,14 @@
                 forgetFolder("assets", "afbeeldingen");
                 const stored = path.split("/").pop().replace(/\.(webp|jpe?g|png)$/i, "");
                 imageStatus.set(stored, { state: "nieuw", preview });
+                if (["koppel", "sorteer"].includes(state.tool)) {
+                    document.querySelectorAll(".audio-check").forEach((box) => {
+                        box.dataset.key = "";
+                    });
+                    save();
+                    update();
+                    return;
+                }
                 imageOwner().beeld = stored;
                 const input = $("#m-beeld");
                 if (input) input.value = stored;
@@ -3508,8 +3893,9 @@
         function defaultHeight() {
             if (state.tool === "flitser") return 450;
             if (state.tool === "letterbord") return 650;
-            // Koppels staan op twee rijen (gegeven teken en invulvak): iets hoger.
-            if (state.tool === "sleep" && state.view === "klein" && sleepIsPairs()) return 260;
+            // Koppelen en sorteren: vaste items, vakjes en kaartjes.
+            if (state.tool === "koppel" && state.view === "klein") return 320;
+            if (state.tool === "sorteer" && state.view === "klein") return 380;
             return state.tool === "sleep" && state.view === "klein" ? 200 : 650;
         }
 
@@ -3523,13 +3909,15 @@
                 ? dictationLink()
                 : state.tool === "klikklak" ? clickBookLink()
                     : state.tool === "flitser" ? flashLink()
-                        : state.tool === "letterbord" ? boardLink() : sleepLink();
+                        : state.tool === "letterbord" ? boardLink()
+                            : state.tool === "koppel" ? pairLink()
+                                : state.tool === "sorteer" ? sortLink() : sleepLink();
             if (result.problem) return result;
             const noMedia = state.tool === "flitser" || state.tool === "letterbord";
             const url = result.url + (noMedia ? "" : mediaPart());
             const height = currentHeight();
             const transparent = state.tool === "klikklak" || state.tool === "flitser"
-                || (state.tool === "sleep" && state.view === "klein");
+                || (["sleep", "koppel", "sorteer"].includes(state.tool) && state.view === "klein");
             const style = transparent ? "border:none;background:transparent;" : "border:none;";
             let extra = state.tool === "dictee" ? "" : ` allowtransparency="true"`;
             // De flitser mag in Genially naar volledig scherm.
@@ -3714,18 +4102,7 @@
                 state.tool = "sleep";
                 const yes = (name) => ["ja", "j", "yes", "1", "true", "waar"].includes(get(name).toLowerCase());
                 const soort = get("soort").toLowerCase();
-                let parsed = sleepFromBrackets(oef, ["getal", "getallen"].includes(soort));
-                if (["koppel", "koppels"].includes(soort)) {
-                    // a[A] e[E] wordt: letters a e, kaartjes in hoofdletters.
-                    const found = [...oef.matchAll(/(\S*?)\[([^\]]*)\]/g)];
-                    const firstAnswer = found.length ? found[0][2] : "";
-                    parsed = {
-                        text: found.map((m) => m[1] || m[2]).join(" "),
-                        mode: "koppels",
-                        gaps: [],
-                        richting: firstAnswer && firstAnswer === firstAnswer.toLowerCase() ? "klein" : "groot",
-                    };
-                }
+                const parsed = sleepFromBrackets(oef, ["getal", "getallen"].includes(soort));
                 const keuzesRaw = get("keuzes");
                 const keuzes = keuzesRaw.includes("|")
                     ? keuzesRaw.split("|").map((x) => x.trim()).filter(Boolean)
@@ -3744,6 +4121,51 @@
                 const { answers } = sleepExercise();
                 state.sleep.extras = unique(keuzes.filter((card) => !answers.includes(card)));
                 state.sleep.order = unique([...keuzes, ...answers]);
+            } else if (path.includes("/koppel")) {
+                const list = (name) => get(name).split("|").map((x) => x.trim()).filter(Boolean);
+                const vast = list("vast");
+                if (!vast.length) return "In deze koppellink staan geen vaste items (vast=).";
+                state.tool = "koppel";
+                const v = fieldFromItems(vast);
+                const kaart = fieldFromItems(list("kaart"));
+                const extra = list("extra");
+                state.koppel = Object.assign(fresh.koppel, {
+                    vast: v.text,
+                    vastAls: v.look,
+                    kaart: kaart.text,
+                    kaartAls: kaart.look,
+                    extra: extra.map((spec) => {
+                        const item = itemLook(spec);
+                        return item.look === kaart.look ? item.value : spec;
+                    }).join(", "),
+                    richting: get("richting").toLowerCase() === "verticaal" ? "verticaal" : "horizontaal",
+                    nakijken: get("nakijken").toLowerCase() === "meteen" ? "meteen" : "einde",
+                    luister: ["ja", "j", "yes", "1", "true"].includes(get("luister").toLowerCase()),
+                    grootte: readTextSize(get("grootte")),
+                });
+            } else if (path.includes("/sorteer")) {
+                const list = (name) => get(name).split("|").map((x) => x.trim()).filter(Boolean);
+                const heads = list("groep").slice(0, 4);
+                if (heads.length < 2) return "In deze sorteerlink staan geen groepen (groep=).";
+                state.tool = "sorteer";
+                const h = fieldFromItems(heads);
+                const all = heads.map((_, index) => list(`g${index + 1}`));
+                const cardLook = fieldFromItems(all.flat()).look;
+                state.sorteer = Object.assign(fresh.sorteer, {
+                    groepen: heads.map((_, index) => ({
+                        kop: h.look ? (itemLook(heads[index]).look === h.look ? itemLook(heads[index]).value : heads[index]) : heads[index],
+                        kaarten: all[index].map((spec) => {
+                            const item = itemLook(spec);
+                            return item.look === cardLook ? item.value : spec;
+                        }).join(", "),
+                    })),
+                    kopAls: h.look,
+                    kaartAls: cardLook,
+                    richting: get("richting").toLowerCase() === "verticaal" ? "verticaal" : "horizontaal",
+                    nakijken: get("nakijken").toLowerCase() === "meteen" ? "meteen" : "einde",
+                    luister: ["ja", "j", "yes", "1", "true"].includes(get("luister").toLowerCase()),
+                    grootte: readTextSize(get("grootte")),
+                });
             } else if (path.includes("/flitser")) {
                 const list = splitList(get("items").replace(/\|/g, ","));
                 if (!list.length) return "In deze flitserlink staan geen letters of woorden (items=).";
@@ -3807,6 +4229,8 @@
             else if (state.tool === "klikklak") renderClickBookForm();
             else if (state.tool === "flitser") renderFlashForm();
             else if (state.tool === "letterbord") renderBoardForm();
+            else if (state.tool === "koppel") renderPairForm();
+            else if (state.tool === "sorteer") renderSortForm();
             else renderSleepForm();
             $("#view-card").classList.toggle("hidden", state.tool === "flitser" || state.tool === "letterbord");
             renderView();
@@ -3821,11 +4245,15 @@
                     dictee: "Alleen het woord, de vakjes en het toetsenbord. Afbeelding en audio zet je in Genially zelf.",
                     klikklak: "Alleen het boekje met de klank- en woordknoppen, met een doorzichtige achtergrond.",
                     sleep: "Alleen het woord (of de zin) en de kaartjes, met een doorzichtige achtergrond.",
+                    koppel: "Alleen de oefening, met een doorzichtige achtergrond.",
+                    sorteer: "Alleen de oefening, met een doorzichtige achtergrond.",
                 },
                 volledig: {
                     dictee: "Met instructie-audio, luisterknop en afbeelding. Om los te gebruiken. Hier kun je ook meerdere woorden na elkaar zetten.",
                     klikklak: "Met een instructie-audio bovenaan. Om los te gebruiken.",
                     sleep: "Met instructie-audio, afbeelding en audio. Om los te gebruiken.",
+                    koppel: "Met instructie-audio bovenaan. Om los te gebruiken.",
+                    sorteer: "Met instructie-audio bovenaan. Om los te gebruiken.",
                 },
             };
             $("#view-hint").textContent = hints[state.view][state.tool] || "";
