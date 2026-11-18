@@ -829,7 +829,7 @@
                 },
                 klikklak: { positions: [[], [], []], woorden: true, uit: [], active: 0, onder: "audio" },
                 sleep: {
-                    text: "", mode: "letters", gaps: [], extras: [], order: [],
+                    text: "", mode: "letters", gaps: [], extras: [], order: [], sorted: false,
                     mix: true, weg: true, klank: false, woord: false, luister: false,
                     elkwoord: false, grootte: 100,
                 },
@@ -1642,8 +1642,15 @@
             return { oef, answers };
         }
 
+        // Vaste volgorde: getallen van klein naar groot, letters en woorden
+        // alfabetisch (0, 1, 2 ... 10 en niet 0, 1, 10, 2).
+        function compareCards(a, b) {
+            return a.localeCompare(b, "nl", { numeric: true, sensitivity: "base" });
+        }
+
         // Houdt de volgorde van de kaartjes vast. Nieuwe kaartjes komen
         // op een willekeurige plaats, zodat het antwoord niet vooraan staat.
+        // Staat 'Op volgorde' aan, dan blijven ze altijd gesorteerd.
         function syncSleepOrder() {
             const s = state.sleep;
             const { answers } = sleepExercise();
@@ -1655,6 +1662,7 @@
                     s.order.splice(at, 0, card);
                 }
             });
+            if (s.sorted) s.order.sort(compareCards);
         }
 
         function renderSleepForm() {
@@ -1686,7 +1694,11 @@
                 <div class="label" style="margin-top:18px">Keuzeletters of - woorden:</div>
                 <p class="hint" style="margin:-2px 0 8px">(De oranje kaartjes zijn het juiste antwoord en verschijnen altijd als optie.)</p>
                 <div class="chips" id="s-cards"></div>
-                <div class="mini-actions"><button class="mini" data-s="shuffle">Andere volgorde</button></div>
+                <div class="mini-actions">
+                    <button class="mini" data-s="shuffle">Andere volgorde</button>
+                    <button class="mini" data-s="sort">Op volgorde</button>
+                </div>
+                <p class="hint" style="margin:2px 0 8px">Zo staan de kaartjes klaar bij de start. 'Op volgorde' zet 'Kaartjes door elkaar' uit.</p>
                 <div id="s-punct" class="hidden" style="margin:6px 0 4px">
                     <div class="hint" style="margin-bottom:4px">Extra leestekens:</div>
                     <div class="chips" id="s-punct-chips"></div>
@@ -1779,6 +1791,13 @@
                 s.gaps = [];
             } else if (data.s === "shuffle") {
                 s.order = [];
+                s.sorted = false;
+            } else if (data.s === "sort") {
+                // Vaste volgorde: dan mogen de kaartjes ook in de oefening
+                // niet meer door elkaar gezet worden.
+                s.sorted = true;
+                s.mix = false;
+                $("#s-mix").checked = false;
             } else if (data.s === "own") {
                 addSleepExtras();
                 return;
@@ -4275,6 +4294,7 @@
                     : splitList(keuzesRaw);
                 state.sleep = Object.assign(fresh.sleep, parsed, {
                     order: [],
+                    sorted: false,
                     extras: [],
                     mix: yes("mix"),
                     weg: yes("weg"),
